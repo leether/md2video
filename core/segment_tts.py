@@ -119,6 +119,12 @@ class SemanticTypeAnalyzer:
             if re.search(rule["pattern"], text):
                 candidates.append((rule["type"], rule["confidence"]))
 
+        # 位置规则兜底：最后一个 segment 如果没有被关键词/正则覆盖，默认 cta
+        if index == total - 1 and not any(t == "cta" for t, _ in candidates):
+            pos_rules = self.rules.get("position_rules", {})
+            if "last" in pos_rules:
+                candidates.append((pos_rules["last"]["type"], pos_rules["last"]["confidence"]))
+
         if not candidates:
             # 默认：中间段为 narrative
             if 0 < index < total - 1:
@@ -127,6 +133,13 @@ class SemanticTypeAnalyzer:
 
         # 选择置信度最高的类型
         best_type, best_conf = max(candidates, key=lambda x: x[1])
+
+        # Guard：非最后一个 segment 不允许被推断为 cta
+        # CTA 只能出现在视频结尾，避免中间段被误标为行动号召
+        if best_type == "cta" and index < total - 1:
+            # 降级为 narrative，置信度中等
+            return "narrative", 0.5
+
         return best_type, best_conf
 
 
