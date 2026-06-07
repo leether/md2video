@@ -385,9 +385,13 @@ class ConcatEngine:
                 trans_duration = trans.get("duration", self.config.default_transition_duration)
 
                 # 计算 offset
-                # offset = sum(clips[0:i].duration) - trans_duration * i
+                # offset = sum(clips[0:i].duration) - sum(all_transition_durations[0:i])
                 cum_duration = sum(c["duration"] for c in clips[:i])
-                offset = cum_duration - trans_duration * i
+                cum_trans_duration = sum(
+                    clips[j].get("transition", {}).get("duration", 0.0)
+                    for j in range(i)
+                )
+                offset = cum_duration - cum_trans_duration
 
                 # xfade 视频转场
                 xfade_types = {
