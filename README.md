@@ -270,6 +270,23 @@ brew install ffmpeg
 - numpy
 - 即梦 CLI（可选，用于 AI 素材）
 
+## 交流群 & 姊妹项目
+
+<p align="center">
+  <img src="assets/qr.png" width="200" alt="微信群二维码">
+  <br>
+  <b>扫码加入交流群</b>，一起探索 AI 自动化内容生产
+</p>
+
+### 姊妹项目
+
+| 项目 | 用途 | 链接 |
+|------|------|------|
+| **md2video** ⬅ 当前 | Markdown / 文章 → 短视频 | [github.com/leether/md2video](https://github.com/leether/md2video) |
+| **md2wechat** | Markdown / 文章 → 公众号排版 & 推送 | [github.com/leether/md2wechat](https://github.com/leether/md2wechat) |
+
+> 同一套自创生（Autopoiesis）免疫系统：越用越聪明，每次出错自动变成规则。
+
 ## 许可证
 
 MIT License — 见 [LICENSE](LICENSE) 文件。
