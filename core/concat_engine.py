@@ -59,6 +59,17 @@ class ConcatEngine:
         self.concat_list_file: Optional[Path] = None
         self.audio_concat_list_file: Optional[Path] = None
 
+        # ── 活记忆加载：启动时自动感知历史教训 ──
+        try:
+            from harness.memory_loader import load_living_memory, format_risk_warnings
+            memory = load_living_memory()
+            warning_text = format_risk_warnings(memory)
+            if warning_text:
+                print(warning_text)
+        except Exception as e:
+            # 活记忆加载失败不阻断拼接流程
+            print(f"[ConcatEngine] 活记忆加载跳过: {e}")
+
     def _probe_video_info(self, video_path: str) -> dict:
         """用 ffprobe 获取视频信息"""
         cmd = [
@@ -450,6 +461,7 @@ class ConcatEngine:
         timeline_path: str = "output/timeline.json",
         segments_audio_dir: str = "output/narration_segments",
         output_video: str = "output/final.mp4",
+        auto_harness: bool = False,
     ) -> Path:
         """
         主入口：按 timeline 拼接最终视频
@@ -517,6 +529,20 @@ class ConcatEngine:
         expected_duration = sum(e["duration"] for e in self.timeline)
         print(f"[ConcatEngine] 输出完成: {output_video}")
         print(f"[ConcatEngine] 预期时长: {expected_duration:.2f}s, 实际时长: {output_duration:.2f}s, 差值: {abs(output_duration - expected_duration):.3f}s")
+
+        # ── 可选：自动运行 harness 质检 ──
+        if auto_harness or os.environ.get("MD2VIDEO_AUTO_HARNESS", "").lower() in ("1", "true", "yes"):
+            try:
+                from harness.harness import VideoComplianceHarness
+                print("\n[ConcatEngine] 自动运行 harness 质检...")
+                harness = VideoComplianceHarness()
+                results = harness.run(output_video)
+                if harness.has_l1_failures():
+                    print("[ConcatEngine] ❌ Harness L1 检查未通过，请查看报告")
+                else:
+                    print("[ConcatEngine] ✅ Harness 检查通过")
+            except Exception as e:
+                print(f"[ConcatEngine] Harness 自动运行失败（可手动运行）: {e}")
 
         return Path(output_video)
 

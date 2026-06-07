@@ -1,6 +1,6 @@
 {
   "_description": "md2video 分层质检规则定义。L1=硬阻塞，L2=警告，L3=模式检查。任何 L1 失败必须阻断流程，L2 失败输出警告但可继续，L3 失败输出人工检查清单。",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "l1_mandatory_checks": {
     "_description": "L1 硬阻塞：任何一项失败，final.mp4 不得标记为完成",
     "tri_consistency": {
@@ -230,6 +230,40 @@
       "auto_detect": true,
       "check_fn": "harness._check_fade_validity"
     },
+    "tts_text_sanitization": {
+      "id": "tts_text_sanitization",
+      "name": "TTS 文本预处理",
+      "description": "edge-tts 对 Markdown 分隔符 --- 和波浪号 ~ 敏感，可能导致 NoAudioReceived",
+      "auto_detect": true,
+      "check_fn": "harness._check_tts_text",
+      "manual_checklist": [
+        "文本中不含 --- 分隔符（已替换为 —）",
+        "文本中不含 ~（已替换为 约）",
+        "其他 Markdown 特殊符号已清理"
+      ]
+    },
+    "jimeng_timeout_fallback": {
+      "id": "jimeng_timeout_fallback",
+      "name": "即梦素材超时降级",
+      "description": "即梦素材生成 querying >5min 时，pipeline 应自动降级为 animation_templates 替代",
+      "auto_detect": false,
+      "manual_checklist": [
+        "即梦素材生成有超时机制（>5min 触发）",
+        "超时后自动切换到 animation_templates 替代方案",
+        "降级后 segment 语义与旁白匹配"
+      ]
+    },
+    "content_accuracy": {
+      "id": "content_accuracy",
+      "name": "内容事实准确性",
+      "description": "segment 文本中的日期、数字、引用必须与原文一致，不得凭记忆填充或包含错误信息",
+      "auto_detect": false,
+      "manual_checklist": [
+        "所有日期与原文一致",
+        "所有数字已回源核对",
+        "推断性表述已明确标注"
+      ]
+    },
     "no_missing_scene": {
       "id": "no_missing_scene",
       "name": "[AUTO] 素材遗漏",
@@ -255,7 +289,52 @@
   "autopoiesis": {
     "self_report_enabled": true,
     "auto_encode": true,
-    "last_evolution": "2026-06-07T10:26:56.206607",
-    "evolution_count": 1
+    "last_evolution": "2026-06-07T16:45:00+08:00",
+    "evolution_count": 4,
+    "living_memory_enabled": true,
+    "memory_loader": "harness.memory_loader.load_living_memory"
+  },
+  "audio_video_sync": {
+    "level": "L1",
+    "description": "每段视频时长必须与对应音频时长差值<0.5s",
+    "auto_detect": true,
+    "threshold_seconds": 0.5,
+    "action": "BLOCK_PIPELINE"
+  },
+  "language_check": {
+    "level": "L1",
+    "description": "所有segment文本必须为中文，不得出现英文段落",
+    "auto_detect": true,
+    "action": "BLOCK_PIPELINE"
+  },
+  "animation_semantic_sync": {
+    "level": "L2",
+    "description": "animation模板参数必须与segment文本语义匹配",
+    "auto_detect": false,
+    "action": "WARN"
+  },
+  "tts_voice_consistency": {
+    "level": "L1",
+    "description": "所有segment必须使用同一voice生成TTS",
+    "auto_detect": false,
+    "action": "BLOCK_PIPELINE"
+  },
+  "jimeng_background_audio": {
+    "level": "L2",
+    "description": "即梦视频的背景音频应提取并混入最终音轨，音量不超过旁白的15%",
+    "auto_detect": false,
+    "action": "WARN"
+  },
+  "bg_audio_level": {
+    "level": "L2",
+    "description": "背景音频mean_volume与旁白差距应<10dB",
+    "auto_detect": true,
+    "action": "WARN"
+  },
+  "animation_text_timing": {
+    "level": "L2",
+    "description": "动画文字应在视频开始后5%时间内出现",
+    "auto_detect": false,
+    "action": "WARN"
   }
 }

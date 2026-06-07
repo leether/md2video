@@ -406,7 +406,8 @@ class AnimationRenderer:
         line_h = font_size + 40
         title_y = 200 if title else 150
         start_y = title_y + (120 if title else 0)
-        items_per_frame = total_frames / max(len(items), 1)
+        # 文字在前15%时间内全部出现，不让观众等
+        items_per_frame = total_frames * 0.15 / max(len(items), 1)
 
         for frame_idx in range(total_frames):
             img = self._create_base_frame(bg_color)
@@ -599,9 +600,9 @@ class AnimationRenderer:
         card_h = total_text_h + author_h + 200
         card_w = self.width - 120
 
-        # 动画参数
-        fade_in_end = int(total_frames * 0.25)
-        quote_end = int(total_frames * 0.75)
+        # 动画参数：文字尽快出现，不让观众等
+        fade_in_end = int(total_frames * 0.03)  # 3%时间完成卡片渐入
+        quote_end = int(total_frames * 0.20)    # 20%时间完成文字显示
         hold_end = total_frames
 
         for frame_idx in range(total_frames):

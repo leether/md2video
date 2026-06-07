@@ -129,17 +129,27 @@ class SelfReport:
         return fp
 
     def _generate_rule_id(self, category: str) -> str:
-        """从类别生成 rule_id"""
+        """从类别生成 rule_id — 扩展覆盖 v5 实战教训"""
         mapping = {
             "素材遗漏": "no_missing_scene",
+            "素材积压": "jimeng_timeout_fallback",
             "音画错位": "audio_video_drift",
+            "音画同步": "audio_video_sync",
             "计算不一致": "calculation_consistency",
             "视觉细节": "text_contrast",
             "ffmpeg": "audio_presence",
             "转场": "transition_validity",
             "淡入淡出": "fade_duration_validity",
+            "TTS": "tts_voice_consistency",
+            "动画语义同步": "animation_semantic_sync",
+            "动画时序": "animation_text_timing",
+            "即梦素材": "jimeng_background_audio",
+            "音频混音": "bg_audio_level",
+            "内容质量": "content_accuracy",
         }
-        return mapping.get(category, f"auto_{category.lower().replace(' ', '_')}")
+        # 安全化 category 字符串
+        safe_cat = category.lower().replace(" ", "_").replace("/", "_").replace("-", "_")
+        return mapping.get(category, f"auto_{safe_cat}")
 
     def auto_encode(self):
         """
@@ -205,23 +215,19 @@ class SelfReport:
         with open(self.lessons_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        # 解析 YAML frontmatter
-        frontmatter = {}
+        # 解析 YAML frontmatter — 复用 memory_loader 的纯 Python 解析器
+        # 使用 importlib 避免模块路径问题（直接运行 self_report.py 时 __package__ 为 None）
+        import importlib.util
+        memory_loader_path = Path(__file__).parent / "memory_loader.py"
+        spec = importlib.util.spec_from_file_location("memory_loader", memory_loader_path)
+        memory_loader = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(memory_loader)
+        frontmatter = memory_loader._parse_yaml_frontmatter(content) or {}
         body = content
         if content.startswith("---"):
             parts = content.split("---", 2)
             if len(parts) >= 3:
-                try:
-                    import yaml
-                    frontmatter = yaml.safe_load(parts[1]) or {}
-                    body = parts[2].strip()
-                except ImportError:
-                    # Fallback: 简单解析 key: value
-                    for line in parts[1].strip().split("\n"):
-                        if ":" in line:
-                            k, v = line.split(":", 1)
-                            frontmatter[k.strip()] = v.strip()
-                    body = parts[2].strip()
+                body = parts[2].strip()
 
         return {"frontmatter": frontmatter, "body": body}
 
@@ -301,7 +307,7 @@ class SelfReport:
 
         body = "".join(body_lines)
 
-        # YAML frontmatter 序列化（简单版本）
+        # YAML frontmatter 序列化 — 保留完整信息，不截断
         fm_lines = ["---"]
         for k, v in fm.items():
             if k == "friction_points":
@@ -309,14 +315,27 @@ class SelfReport:
                 for fp_data in v:
                     fm_lines.append(f"  - id: \"{fp_data['id']}\"")
                     fm_lines.append(f"    category: \"{fp_data['category']}\"")
-                    fm_lines.append(f"    description: \"{fp_data['description'][:80]}...\"")
+                    # 保留完整描述，不截断
+                    desc = str(fp_data.get("description", "")).replace('"', '\\"')
+                    fm_lines.append(f'    description: "{desc}"')
+                    if fp_data.get("resolution"):
+                        res = str(fp_data["resolution"]).replace('"', '\\"')
+                        fm_lines.append(f'    resolution: "{res}"')
                     if fp_data.get("rule_id"):
-                        fm_lines.append(f"    rule_id: \"{fp_data['rule_id']}\"")
+                        fm_lines.append(f'    rule_id: "{fp_data["rule_id"]}"')
+                    if fp_data.get("timestamp"):
+                        fm_lines.append(f'    timestamp: "{fp_data["timestamp"]}"')
+            elif isinstance(v, bool):
+                fm_lines.append(f"{k}: {str(v).lower()}")
+            elif isinstance(v, int):
+                fm_lines.append(f"{k}: {v}")
+            elif isinstance(v, str):
+                fm_lines.append(f'{k}: "{v}"')
             else:
-                fm_lines.append(f"{k}: {json.dumps(v) if isinstance(v, (int, bool)) else v}")
-        fm_lines.append("---\n")
+                fm_lines.append(f"{k}: {json.dumps(v, ensure_ascii=False)}")
+        fm_lines.append("---")
 
-        full_content = "\n".join(fm_lines) + "\n" + body
+        full_content = "\n".join(fm_lines) + "\n\n" + body
 
         self.lessons_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.lessons_path, "w", encoding="utf-8") as f:
