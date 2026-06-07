@@ -1,0 +1,19 @@
+{
+  "version": "1.0.0",
+  "resource_count": 1,
+  "resources": [
+    {
+      "id": "cta_qrcode_main",
+      "resource_type": "qrcode",
+      "target_url": "wechat://group",
+      "target_platform": "wechat",
+      "target_account": "md2video交流群",
+      "media_path": "assets/qr.png",
+      "media_type": "image",
+      "checksum": "e5c8e0e8f8f8e8e8",
+      "generated_at": "2026-06-07T06:58:00+08:00",
+      "notes": "从 md2wechat 仓库复用的真实微信群二维码",
+      "valid": true
+    }
+  ]
+}
