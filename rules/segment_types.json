@@ -9,8 +9,8 @@
     },
     "last": {
       "type": "cta",
-      "confidence": 0.6,
-      "description": "最后一段默认为 cta，但如果有 CTA 关键词则 confidence 更高"
+      "confidence": 0.9,
+      "description": "最后一段默认为 cta，高 confidence 确保结尾引导"
     }
   },
   "keyword_rules": [

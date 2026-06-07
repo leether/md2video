@@ -102,6 +102,20 @@ class StoryboardAI:
             if candidates:
                 return max(candidates, key=lambda x: x[1])[0]
 
+        # 位置规则兜底
+        pos_rules = self.rules.get("position_rules", {})
+        if index == 0 and "first" in pos_rules:
+            candidates.append((pos_rules["first"]["type"], pos_rules["first"]["confidence"]))
+        if index == total - 1 and "last" in pos_rules:
+            candidates.append((pos_rules["last"]["type"], pos_rules["last"]["confidence"]))
+
+        if candidates:
+            best_type, _ = max(candidates, key=lambda x: x[1])
+            # Guard：非最后一个 segment 不允许被推断为 cta
+            if best_type == "cta" and index < total - 1:
+                return "narrative"
+            return best_type
+
         # 简单回退
         if index == 0:
             return "hook"
