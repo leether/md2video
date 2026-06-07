@@ -1,0 +1,261 @@
+{
+  "_description": "md2video 分层质检规则定义。L1=硬阻塞，L2=警告，L3=模式检查。任何 L1 失败必须阻断流程，L2 失败输出警告但可继续，L3 失败输出人工检查清单。",
+  "version": "1.0.0",
+  "l1_mandatory_checks": {
+    "_description": "L1 硬阻塞：任何一项失败，final.mp4 不得标记为完成",
+    "tri_consistency": {
+      "id": "tri_consistency",
+      "name": "三方一致性",
+      "description": "segments.json / prompts.json / scenes/ 目录三方完全对齐",
+      "auto_detect": true,
+      "check_fn": "timeline_mapper.validate_triple_consistency",
+      "block_on_fail": true
+    },
+    "placeholder_count": {
+      "id": "placeholder_count",
+      "name": "Placeholder 检测",
+      "description": "final.mp4 中不得存在 placeholder 或渲染失败画面",
+      "auto_detect": true,
+      "check_fn": "frame_extractor._check_black_frame",
+      "block_on_fail": true,
+      "threshold": {
+        "max_placeholder_frames": 0,
+        "min_brightness": 10,
+        "max_uniformity": 0.95
+      }
+    },
+    "calculation_consistency": {
+      "id": "calculation_consistency",
+      "name": "计算一致性",
+      "description": "视频中所有数值计算（如总和、差值、百分比）必须与数据源一致",
+      "auto_detect": false,
+      "block_on_fail": true,
+      "manual_checklist": [
+        "所有求和公式已验证",
+        "所有百分比计算已验证",
+        "所有日期/时间计算已验证"
+      ]
+    },
+    "audio_presence": {
+      "id": "audio_presence",
+      "name": "音频存在性",
+      "description": "final.mp4 必须包含音频流",
+      "auto_detect": true,
+      "check_fn": "harness._check_audio_stream",
+      "block_on_fail": true
+    },
+    "timeline_completeness": {
+      "id": "timeline_completeness",
+      "name": "Timeline 完整性",
+      "description": "timeline.json 中每个 segment 都有对应的素材文件和音频文件",
+      "auto_detect": true,
+      "check_fn": "timeline_mapper.build_timeline",
+      "block_on_fail": true
+    },
+    "no_missing_scene": {
+      "id": "no_missing_scene",
+      "name": "无遗漏场景",
+      "description": "prompts.json 中声明的所有 scene 都必须在 final.mp4 中出现",
+      "auto_detect": true,
+      "check_fn": "harness._check_no_missing_scene",
+      "block_on_fail": true
+    },
+    "no_duplicate_scene": {
+      "id": "no_duplicate_scene",
+      "name": "无重复场景",
+      "description": "timeline 中不得出现重复的 segment_id",
+      "auto_detect": true,
+      "check_fn": "harness._check_no_duplicate",
+      "block_on_fail": true
+    }
+  },
+  "l2_warning_checks": {
+    "_description": "L2 警告：失败输出警告日志，但不阻断流程",
+    "audio_video_drift": {
+      "id": "audio_video_drift",
+      "name": "音画时长差值",
+      "description": "视频流与音频流时长差值不得超过阈值",
+      "auto_detect": true,
+      "check_fn": "harness._check_av_drift",
+      "threshold": {
+        "max_drift_seconds": 2.0
+      }
+    },
+    "resolution_match": {
+      "id": "resolution_match",
+      "name": "分辨率匹配",
+      "description": "所有素材分辨率应为目标分辨率（默认 1080×1920）或等比例缩放",
+      "auto_detect": true,
+      "check_fn": "harness._check_resolution",
+      "threshold": {
+        "target_width": 1080,
+        "target_height": 1920,
+        "min_acceptable": 720
+      }
+    },
+    "frame_rate_variance": {
+      "id": "frame_rate_variance",
+      "name": "帧率方差",
+      "description": "所有素材帧率应一致，方差不超过阈值",
+      "auto_detect": true,
+      "check_fn": "harness._check_fps_variance",
+      "threshold": {
+        "target_fps": 30,
+        "max_variance": 1.0
+      }
+    },
+    "font_fallback": {
+      "id": "font_fallback",
+      "name": "字体回退",
+      "description": "中文字体应正确加载，未回退到系统默认字体（通过抽帧检查）",
+      "auto_detect": false,
+      "threshold": {
+        "expected_font": "Hiragino Sans GB"
+      }
+    },
+    "segment_duration_reasonable": {
+      "id": "segment_duration_reasonable",
+      "name": "段落时长合理性",
+      "description": "单段旁白时长应在合理范围内（太短可能漏字，太长可能啰嗦）",
+      "auto_detect": true,
+      "check_fn": "harness._check_segment_duration",
+      "threshold": {
+        "min_seconds": 1.0,
+        "max_seconds": 30.0
+      }
+    }
+  },
+  "l3_render_checks": {
+    "_description": "L3 模式检查：自动检测+人工确认。auto_detect=true 的项程序自动检查并输出报告，auto_detect=false 的项输出人工检查清单",
+    "arrow_direction_semantic": {
+      "id": "arrow_direction_semantic",
+      "name": "箭头方向语义",
+      "description": "箭头方向必须与数据因果关系一致（如：涨价→向上箭头，降价→向下箭头，清零→向下箭头）",
+      "auto_detect": false,
+      "manual_checklist": [
+        "所有箭头方向与数值变化方向一致",
+        "无箭头方向与语义矛盾的情况"
+      ]
+    },
+    "color_semantic": {
+      "id": "color_semantic",
+      "name": "颜色语义",
+      "description": "颜色使用应符合语义约定（如：正数/涨价用绿色/红色，负数/降价用相反颜色，需提前约定）",
+      "auto_detect": false,
+      "manual_checklist": [
+        "正数/涨价颜色已约定并统一应用",
+        "负数/降价颜色已约定并统一应用",
+        "警示/过期用黄色/红色，无矛盾"
+      ]
+    },
+    "emoji_font_compatibility": {
+      "id": "emoji_font_compatibility",
+      "name": "Emoji 字体兼容性",
+      "description": "所有 emoji 在目标字体下正确渲染，无方块 fallback",
+      "auto_detect": true,
+      "check_fn": "frame_extractor._check_emoji_blocks",
+      "manual_checklist": [
+        "所有 emoji 已替换为字体支持的符号或矢量图形",
+        "备用方案：使用 ! / X / √ 等 ASCII 替代 emoji"
+      ]
+    },
+    "cta_card_presence": {
+      "id": "cta_card_presence",
+      "name": "CTA 卡片存在性",
+      "description": "视频结尾必须包含引导关注的 CTA 卡片或等价画面",
+      "auto_detect": false,
+      "manual_checklist": [
+        "结尾 5-8 秒包含 CTA 画面",
+        "CTA 画面包含明确的行动号召（关注/点赞/评论）"
+      ]
+    },
+    "qrcode_integrity": {
+      "id": "qrcode_integrity",
+      "name": "二维码完整性",
+      "description": "CTA 二维码资源必须在 cta_resources.json 中注册，URL 可扫描且与视频主题一致",
+      "auto_detect": true,
+      "check_fn": "harness._check_qrcode_integrity",
+      "manual_checklist": [
+        "cta_resources.json 中存在至少一个 qrcode 资源",
+        "二维码 URL 与视频目标平台一致",
+        "二维码图片可正常扫描",
+        "CTA endcard 中二维码位置正确、无遮挡"
+      ]
+    },
+    "qrcode_url_consistency": {
+      "id": "qrcode_url_consistency",
+      "name": "二维码 URL 一致性",
+      "description": "二维码指向的 URL 与视频主题/账号信息一致，无错链",
+      "auto_detect": false,
+      "manual_checklist": [
+        "二维码 URL 与目标平台账号匹配",
+        "URL 非空且格式合法（http/https 开头）",
+        "checksum 与 URL 匹配（防篡改）"
+      ]
+    },
+    "text_contrast": {
+      "id": "text_contrast",
+      "name": "文字对比度",
+      "description": "文字与背景对比度足够，确保可读性",
+      "auto_detect": true,
+      "check_fn": "harness._check_text_contrast",
+      "threshold": {
+        "min_contrast_ratio": 4.5
+      }
+    },
+    "motion_consistency": {
+      "id": "motion_consistency",
+      "name": "运动一致性",
+      "description": "同类型动画的运动方向/速度应一致（如所有数字滚动都向上）",
+      "auto_detect": false,
+      "manual_checklist": [
+        "同类动画运动方向一致",
+        "运动速度适中，不突兀"
+      ]
+    },
+    "transition_validity": {
+      "id": "transition_validity",
+      "name": "转场有效性",
+      "description": "timeline.json 中声明的转场效果必须在 ffmpeg 中有效，transition_duration 不超过相邻段最小时长的一半",
+      "auto_detect": true,
+      "check_fn": "harness._check_transition_validity",
+      "threshold": {
+        "max_transition_ratio": 0.5
+      }
+    },
+    "fade_duration_validity": {
+      "id": "fade_duration_validity",
+      "name": "淡入淡出时长有效性",
+      "description": "fade_in 和 fade_out 时长必须小于对应段的 duration",
+      "auto_detect": true,
+      "check_fn": "harness._check_fade_validity"
+    },
+    "no_missing_scene": {
+      "id": "no_missing_scene",
+      "name": "[AUTO] 素材遗漏",
+      "description": "s22 场景缺失",
+      "auto_detect": true,
+      "check_fn": "harness._auto_check",
+      "origin_friction": "f001",
+      "autopoiesis": true
+    }
+  },
+  "harness_execution": {
+    "_description": "Harness 执行策略",
+    "trigger": "automatic",
+    "trigger_point": "after_concat_engine",
+    "abort_on_l1_fail": true,
+    "warn_on_l2_fail": true,
+    "output_format": "both_json_and_text",
+    "report_path": "output/compliance_report.json",
+    "summary_path": "output/compliance_summary.txt",
+    "must_read_actual_files": true,
+    "must_not_trust_memory": true
+  },
+  "autopoiesis": {
+    "self_report_enabled": true,
+    "auto_encode": true,
+    "last_evolution": "2026-06-07T10:26:56.206607",
+    "evolution_count": 1
+  }
+}

@@ -1,0 +1,20 @@
+# Core dependencies
+edge-tts>=6.1.0
+Pillow>=10.0.0
+imageio[ffmpeg]>=2.31.0
+numpy>=1.24.0
+
+# Optional: for frame_extractor edge detection
+scipy>=1.10.0
+
+# Optional: for text overlap detection in frame_extractor
+# pytesseract>=0.3.10
+
+# Required: for CTA qrcode generation
+qrcode[pil]>=7.4.0
+
+# Optional: for qrcode scannability validation
+# pyzbar>=0.1.9
+
+# Optional: for jimeng CLI
+# jimeng>=1.4.0

@@ -1,0 +1,74 @@
+{
+  "_description": "语义段落类型规则。定义如何从文本内容推断段落的语义角色。被 segment_tts.py 和 storyboard_ai.py 共同加载。",
+  "version": "1.0.0",
+  "position_rules": {
+    "first": {
+      "type": "hook",
+      "confidence": 0.7,
+      "description": "第一段默认为 hook，除非被更强的 keyword 规则覆盖"
+    },
+    "last": {
+      "type": "cta",
+      "confidence": 0.6,
+      "description": "最后一段默认为 cta，但如果有 CTA 关键词则 confidence 更高"
+    }
+  },
+  "keyword_rules": [
+    {
+      "keywords": ["价格", "涨价", "降价", "翻倍", "三倍", "对比", "vs", "versus", "相差"],
+      "type": "data_contrast",
+      "confidence": 0.9,
+      "description": "包含数值对比关键词"
+    },
+    {
+      "keywords": ["明细", "列表", "合计", "总和", "第一", "第二", "第三", "步骤"],
+      "type": "list",
+      "confidence": 0.85,
+      "description": "包含列表/步骤关键词"
+    },
+    {
+      "keywords": ["日期", "月", "日", "号", "截止", "到期", "清零", "倒计时"],
+      "type": "date",
+      "confidence": 0.8,
+      "description": "包含日期/时间关键词"
+    },
+    {
+      "keywords": ["\"", "'", "说过", "写道", "名言", "金句"],
+      "type": "quote",
+      "confidence": 0.75,
+      "description": "包含引用/名言关键词"
+    },
+    {
+      "keywords": ["关注", "点赞", "评论", "转发", "收藏", "订阅", "follow", "like"],
+      "type": "cta",
+      "confidence": 0.95,
+      "description": "包含 CTA 行动号召关键词"
+    },
+    {
+      "keywords": ["接下来", "然后", "其次", "另外", "不仅如此", "更重要的是"],
+      "type": "transition",
+      "confidence": 0.6,
+      "description": "包含过渡连接词"
+    }
+  ],
+  "pattern_rules": [
+    {
+      "pattern": "\\d+\\.\\s+.+",
+      "type": "list",
+      "confidence": 0.8,
+      "description": "数字编号列表格式，如 '1. xxx'"
+    },
+    {
+      "pattern": "[\\d]+[\\s]*[\\+\\-\\×\\÷]",
+      "type": "data_contrast",
+      "confidence": 0.7,
+      "description": "数字运算格式"
+    },
+    {
+      "pattern": "\\d{4}年|\\d{1,2}月\\d{1,2}日",
+      "type": "date",
+      "confidence": 0.85,
+      "description": "中文日期格式"
+    }
+  ]
+}

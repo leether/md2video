@@ -1,0 +1,102 @@
+{
+  "_description": "分镜拆解规则。定义语义类型→视觉类型的映射，以及段间转场规则。被 storyboard_ai.py 加载。",
+  "version": "1.0.0",
+  "segment_type_mapping": {
+    "hook": {
+      "visual_type": "jimeng",
+      "notes": "Hook 段：强视觉冲击，大字号文字 + 动态背景",
+      "template_id": "hook_bold_text"
+    },
+    "narrative": {
+      "visual_type": "jimeng",
+      "notes": "叙事段：场景化描述，保持画面连贯性",
+      "template_id": "narrative_scene"
+    },
+    "data_contrast": {
+      "visual_type": "animation",
+      "notes": "数据对比：用柱状图/饼图/对比画面展示数值关系",
+      "animation_type": "bar_chart",
+      "template_id": "comparison_split"
+    },
+    "list": {
+      "visual_type": "animation",
+      "notes": "列表展示：bullet_list 逐行出现，或 table_scroll",
+      "animation_type": "bullet_list",
+      "template_id": "bullet_list"
+    },
+    "date": {
+      "visual_type": "animation",
+      "notes": "日期标注：calendar_highlight 高亮重要日期",
+      "animation_type": "calendar_highlight",
+      "template_id": "calendar_highlight"
+    },
+    "quote": {
+      "visual_type": "animation",
+      "notes": "引用卡片：quote_card 居中排版 + 引号装饰",
+      "animation_type": "quote_card",
+      "template_id": "quote_card"
+    },
+    "cta": {
+      "visual_type": "static",
+      "notes": "CTA 结尾卡片：引导关注/点赞/评论，通常包含二维码",
+      "template_id": "cta_endcard"
+    },
+    "transition": {
+      "visual_type": "transition",
+      "notes": "纯过渡画面，可用 fade 或快速切",
+      "template_id": "fade_transition"
+    },
+    "unknown": {
+      "visual_type": "jimeng",
+      "notes": "未识别类型，回退到即梦 AI 生成",
+      "template_id": "default"
+    }
+  },
+  "transition_rules": {
+    "hook→narrative": {
+      "type": "fade",
+      "duration": 0.5,
+      "notes": "从 hook 到叙事，柔和过渡"
+    },
+    "narrative→data_contrast": {
+      "type": "crossfade",
+      "duration": 0.8,
+      "notes": "切换到数据可视化，稍长过渡让观众适应"
+    },
+    "data_contrast→list": {
+      "type": "slideleft",
+      "duration": 0.6,
+      "notes": "数据到列表，横向滑动暗示信息展开"
+    },
+    "list→date": {
+      "type": "fade",
+      "duration": 0.5,
+      "notes": "列表到日期，简洁过渡"
+    },
+    "date→quote": {
+      "type": "crossfade",
+      "duration": 0.7,
+      "notes": "日期到引用，交叉淡入增强情感"
+    },
+    "quote→cta": {
+      "type": "fade",
+      "duration": 1.0,
+      "notes": "引用到 CTA，较长 fade 制造停顿感，引导行动"
+    },
+    "narrative→narrative": {
+      "type": "fade",
+      "duration": 0.4,
+      "notes": "连续叙事段之间，快速 fade 保持流畅"
+    },
+    "hook→data_contrast": {
+      "type": "wipeleft",
+      "duration": 0.6,
+      "notes": "hook 直接到数据，wipe 增强冲击力"
+    },
+    "default": {
+      "type": "fade",
+      "duration": 0.5,
+      "notes": "默认回退：所有未匹配的段间转场使用 fade"
+    }
+  }
+}
