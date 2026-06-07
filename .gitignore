@@ -60,3 +60,6 @@ scenes/
 !examples/*.md
 !examples/*.py
 !rules/*.json
+
+# Keep CTA assets
+!assets/*.png

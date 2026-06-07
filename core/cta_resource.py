@@ -185,6 +185,38 @@ class CTAResourceManager:
         self.resources = [r for r in self.resources if r.id != resource.id]
         self.resources.append(resource)
 
+    def register_existing_image(
+        self,
+        image_path: str,
+        target_url: str,
+        target_platform: str,
+        target_account: str,
+        resource_id: str = "cta_qrcode_main",
+    ) -> CTAResource:
+        """
+        注册已有图片作为 CTA 二维码资源（如 assets/qr.png）
+
+        使用场景：已有真实二维码图片，无需重新生成。
+        """
+        path = Path(image_path)
+        if not path.exists():
+            raise FileNotFoundError(f"二维码图片不存在: {image_path}")
+
+        resource = CTAResource(
+            id=resource_id,
+            resource_type="qrcode",
+            target_url=target_url,
+            target_platform=target_platform,
+            target_account=target_account,
+            media_path=str(path),
+            media_type="image",
+            checksum=self._compute_checksum(target_url),
+            valid=True,
+            notes=f"Registered existing image: {path.name}",
+        )
+        self.register(resource)
+        return resource
+
     def get(self, resource_id: str) -> Optional[CTAResource]:
         """按ID获取资源"""
         for r in self.resources:

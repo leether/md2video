@@ -33,6 +33,8 @@ md2video/
 │   ├── animations/          # Python 动画模板（9种，纯代码无API依赖）
 │   ├── prompt_templates/    # 即梦 prompt 模板 + 预算控制
 │   └── storyboard/          # 文章→分镜 AI 拆解器（规则驱动）
+├── assets/                  # 静态资源（CTA 二维码等）
+│   └── qr.png               # 真实微信群二维码（供 CTA endcard 引用）
 ├── examples/                # 示例
 │   ├── example_article.md
 │   └── example_pipeline.py
@@ -262,7 +264,7 @@ storyboard_from_article(
 3. **音频拼接唯一可靠路径**：mp3 → wav → concat → m4a
 4. **禁止使用 emoji**：使用 ASCII 替代（! / X / √）或 Pillow 矢量图形
 5. **预算控制**：即梦素材消耗积分，内置 `budget_limit` 和重试限制
-6. **二维码资源治理**：CTA 二维码必须注册到 cta_resources.json，生成即校验，URL 与主题一致
+6. **二维码资源治理**：CTA 二维码必须注册到 `cta_resources.json`，生成即校验，URL 与主题一致。仓库已预置 `assets/qr.png` 真实微信群二维码，可直接用于 CTA endcard
 7. **双路径拼接**：concat_engine 自动选择 `-c copy` 快速路径或 `filter_complex` 特效路径，确保质量与性能的平衡
 
 ## 文件规范
