@@ -155,7 +155,7 @@ class ConcatEngine:
                 "-c:v", self.config.video_codec,
                 "-pix_fmt", self.config.pixel_format,
                 "-crf", str(self.config.crf),
-                "-an",  # 先不处理音频
+                "-an",  # 图片无音频
                 output_path,
             ]
         else:
@@ -183,9 +183,9 @@ class ConcatEngine:
                 "-vf", filter_str,
                 "-t", str(target_duration),
                 "-c:v", self.config.video_codec,
+                "-c:a", "copy",  # 保留原始音频流（filter_complex 路径需要）
                 "-pix_fmt", self.config.pixel_format,
                 "-crf", str(self.config.crf),
-                "-an",  # 先不处理音频
                 output_path,
             ]
 
@@ -346,22 +346,20 @@ class ConcatEngine:
             duration = clip["duration"]
 
             # 视频 fade
-            video_filters = [f"[{i}:v]setpts=PTS-STARTPTS"]
+            video_filters = ["setpts=PTS-STARTPTS"]
             if fade_in > 0:
                 video_filters.append(f"fade=t=in:st=0:d={fade_in}")
             if fade_out > 0:
                 video_filters.append(f"fade=t=out:st={duration - fade_out}:d={fade_out}")
-            video_filters.append(f"[v{i}]")
-            filter_parts.append(",".join(video_filters))
+            filter_parts.append(f"[{i}:v]{','.join(video_filters)}[v{i}]")
 
             # 音频 fade
-            audio_filters = [f"[{i}:a]asetpts=PTS-STARTPTS"]
+            audio_filters = ["asetpts=PTS-STARTPTS"]
             if fade_in > 0:
                 audio_filters.append(f"afade=t=in:st=0:d={fade_in}")
             if fade_out > 0:
                 audio_filters.append(f"afade=t=out:st={duration - fade_out}:d={fade_out}")
-            audio_filters.append(f"[a{i}]")
-            filter_parts.append(",".join(audio_filters))
+            filter_parts.append(f"[{i}:a]{','.join(audio_filters)}[a{i}]")
 
         # 链式应用 transition
         video_chain = "v0"
@@ -453,7 +451,13 @@ class ConcatEngine:
             output_video,
         ]
 
-        subprocess.run(cmd, capture_output=True, check=True)
+        result = subprocess.run(cmd, capture_output=True, check=False)
+        if result.returncode != 0:
+            print(f"[ConcatEngine] ffmpeg failed with code {result.returncode}")
+            print(f"[ConcatEngine] stderr: {result.stderr.decode('utf-8', errors='replace')[:2000]}")
+            raise subprocess.CalledProcessError(
+                result.returncode, cmd, output=result.stdout, stderr=result.stderr
+            )
         return Path(output_video)
 
     # ═══════════════════════════════════════════════════════
