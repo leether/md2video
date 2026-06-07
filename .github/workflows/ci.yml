@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pillow numpy
+
+      - name: Python syntax check
+        run: |
+          python -m py_compile core/segment_tts.py
+          python -m py_compile core/timeline_mapper.py
+          python -m py_compile core/concat_engine.py
+          python -m py_compile core/cta_resource.py
+          python -m py_compile core/frame_extractor.py
+          python -m py_compile harness/self_report.py
+          python -m py_compile harness/harness.py
+          python -m py_compile extensions/storyboard/storyboard_ai.py
+          python -m py_compile extensions/animations/animation_templates.py
+
+      - name: JSON validation
+        run: |
+          python -c "import json; json.load(open('harness/video-rules.json'))"
+          python -c "import json; json.load(open('rules/segment_types.json'))"
+          python -c "import json; json.load(open('rules/storyboard_rules.json'))"
+
+      - name: Self report dry-run
+        run: |
+          python harness/self_report.py
+
+      - name: Check LESSONS_LEARNED frontmatter
+        run: |
+          python -c "
+          import re
+          with open('docs/LESSONS_LEARNED.md') as f:
+              content = f.read()
+          assert content.startswith('---'), 'Missing YAML frontmatter'
+          print('Frontmatter check: OK')
+          "
