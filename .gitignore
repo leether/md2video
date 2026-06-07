@@ -40,8 +40,8 @@ Thumbs.db
 # Project outputs
 output/
 scenes/
-animations/
-rebuild_animations/
+/animations/
+/rebuild_animations/
 *.mp4
 *.mov
 *.wav
