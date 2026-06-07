@@ -158,6 +158,8 @@ harness → compliance_report.json
 | `concat_engine` | **双路径策略**：无特效→`-c copy` 快速路径；有特效→filter_complex (xfade+acrossfade) |
 | `frame_extractor` | "不要在脑子里检查"，必须回读 PNG 帧 |
 | `harness` | 自动触发，逐项核查，L1 失败阻断 |
+| `bg_audio_mixer` | 即梦素材提取背景音→loudnorm标准化→循环填充→amix混入（旁白立体声化，背景≤35%） |
+| `animation_timing` | 动画文字必须在视频开始后5%时间内出现，禁止长 fade-in 让观众干等 |
 
 ## 质检体系（三层）
 
@@ -185,6 +187,9 @@ harness → compliance_report.json
 | 分辨率匹配 | 1080×1920 |
 | 帧率方差 | 30fps ± 1 |
 | 段落时长合理性 | 2-15s |
+| 背景音频音量 | 与旁白差距 ≤ 10dB（mean_volume 对比） |
+| 动画文字延迟 | 文字在开始后 ≤ 5% 时间内必须可见 |
+| 即梦背景音频混入 | 提取即梦原音 → loudnorm → 循环填充 → amix（≤35%） |
 
 ### L3 模式检查（人工确认清单）
 
@@ -200,6 +205,9 @@ harness → compliance_report.json
 | 运动一致性 | 人工 |
 | 转场有效性 | 自动 |
 | 淡入淡出时长有效性 | 自动 |
+| TTS 文本预处理 | 自动（--- 替换为 —，~ 替换为 约） |
+| 即梦素材超时降级 | 人工（querying>5min 自动切 animation） |
+| 内容事实准确性 | 人工（日期/数字回源核对） |
 
 ## 扩展模板
 
@@ -208,6 +216,12 @@ harness → compliance_report.json
 内置模板（`extensions/animation_templates/base.py`）：
 - `price_contrast`: 价格对比（左右对比 + 箭头）
 - `table`: 表格数据展示（逐行淡入）
+
+**文字出现时序硬规约（避免观众干等）：**
+- `quote_card`: `fade_in_end ≤ total_frames × 0.05`，`quote_end ≤ total_frames × 0.25`
+- `bullet_list`: 全部文字在 `total_frames × 0.15` 内出现完毕
+- `bar_chart`/`trend_line`: 数据标签第1帧即显示，柱子/折线快速生长
+- 通用原则：文字内容必须在解说开始后 0.5s 内可见
 
 自定义模板：继承 `AnimationTemplate`，实现 `render()` 方法。
 
@@ -309,12 +323,53 @@ storyboard_from_article(
 - scipy（可选，用于 frame_extractor 边缘检测）
 - jimeng CLI（可选，用于 AI 素材生成）
 
+## 活记忆运行时加载
+
+`harness/memory_loader.py` 是系统的「免疫系统记忆」。pipeline 启动时自动加载 `docs/LESSONS_LEARNED.md`，打印历史摩擦风险提示：
+
+```
+━━━ 🧠 活记忆风险提示 ━━━
+已加载 13 条历史摩擦点，最近高摩擦类别：TTS、内容质量、动画时序
+
+  ⚡ [f007] TTS: 49段TTS批次间 voice 不一致...
+     → 全部49段串行重生成，voice=zh-CN-XiaoxiaoNeural
+━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+- 同样的坑不反复踩：运行时感知历史教训
+- 高摩擦类别自动附加到 L3 人工确认清单
+- 纯 Python 实现，无 PyYAML 依赖
+
+## Harness 自动运行
+
+`ConcatEngine` 支持拼接完成后自动运行 harness 质检：
+
+```python
+engine = ConcatEngine()
+engine.concat(
+    timeline_path="output/timeline.json",
+    auto_harness=True,  # ← 启用自动质检
+)
+```
+
+或通过环境变量启用：
+
+```bash
+export MD2VIDEO_AUTO_HARNESS=1
+python your_pipeline.py
+```
+
+自动 harness 在拼接完成后立即运行，L1 失败会在控制台打印 ❌，但不阻断返回（报告保存到 `output/compliance_report.json`）。
+
 ## 已知限制
 
 1. 即梦素材需要手动调用 `jimeng` CLI 生成（当前未封装自动调用）
 2. frame_extractor 的文字重叠检测依赖 pytesseract（可选）
-3. L3 模式检查中的箭头方向、颜色语义需要人工确认
+3. L3 模式检查中的箭头方向、颜色语义、内容事实准确性需要人工确认
 4. 中文字体硬编码为 Hiragino Sans GB（macOS），其他平台需修改
+5. **背景音频提取**：即梦素材标准化时须保留原音频流，单独提取后混入，禁止 `-an` 直接丢弃
+6. **TTS voice 一致性**：全部 segment 必须用同一 voice 生成，禁止混用不同 session 的音频
+7. **TTS 文本预处理**：Markdown 分隔符 `---` 和 `~` 会导致 edge-tts 失败，必须在生成前替换
 
 ## Autopoiesis Governance
 
@@ -367,4 +422,4 @@ python harness/self_report.py --capture "素材遗漏" "s22 场景缺失" "补�
 
 ## 版本
 
-v1.1.0 — Autopoiesis 升级：规则驱动分镜、语义类型推断、自动转场、9种动画模板、自检免疫系统
+v1.2.0 — 自创生系统完整迁移：活记忆运行时加载（memory_loader）、摩擦点→规则演化闭环（self_report）、L3 规则扩展（v5 实战教训编码）、Harness 自动运行
