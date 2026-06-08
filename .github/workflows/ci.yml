@@ -30,6 +30,10 @@ jobs:
         run: |
           python scripts/smoke_imports.py
 
+      - name: CTA resource governance check
+        run: |
+          python scripts/verify_cta_resources.py
+
       - name: JSON validation
         run: |
           python -c "import json; json.load(open('harness/video-rules.json'))"
