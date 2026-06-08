@@ -129,6 +129,31 @@ harness.run("output/final_with_cta.mp4")
 
 完整 pipeline 示例见 `examples/example_pipeline.py`。
 
+### 3b. 治理 dry-run（推荐先跑）
+
+在调用真实 TTS、即梦或完整视频拼接前，先运行治理入口，确认规则、CTA、
+导入路由和 self-report no-write 行为没有漂移：
+
+```bash
+python scripts/orchestrator.py \
+  --input examples/example_article.md \
+  --output-dir output/dry-run \
+  --dry-run \
+  --skip-command-checks \
+  --allow-dirty-output
+```
+
+这个入口不调用付费或远程素材服务。它会生成：
+
+- `.md2video-pipeline.jsonl`：结构化步骤日志
+- `output/dry-run/run-manifest.json`：输入 hash、仓库状态、环境版本、关键产物指纹和步骤结果
+
+只需要预检时可直接运行：
+
+```bash
+python scripts/preflight.py --input examples/example_article.md --skip-command-checks --json
+```
+
 ## Pipeline 详解
 
 ### 数据流

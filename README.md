@@ -94,6 +94,14 @@ storyboard_from_article(article, output_dir='output')
 
 # 运行自检
 python harness/self_report.py
+
+# 治理 dry-run（不调用外部素材/TTS 服务）
+python scripts/orchestrator.py \
+  --input examples/example_article.md \
+  --output-dir output/dry-run \
+  --dry-run \
+  --skip-command-checks \
+  --allow-dirty-output
 ```
 
 零外部 API 依赖即可运行语法检查和自检。即梦 CLI 仅在有 AI 素材需求时需要。
@@ -118,6 +126,31 @@ compliance_report.json（L1/L2/L3 报告）
 LESSONS_LEARNED.md 更新 + video-rules.json 规则演化
 ✅
 ```
+
+### Step -1：治理预检和运行证明
+
+正式生成前先跑治理 dry-run，确认本仓入口、规则、CTA 资源和自检链路是自洽的：
+
+```bash
+python scripts/preflight.py \
+  --input examples/example_article.md \
+  --skip-command-checks \
+  --json
+
+python scripts/orchestrator.py \
+  --input examples/example_article.md \
+  --output-dir output/dry-run \
+  --dry-run \
+  --skip-command-checks \
+  --allow-dirty-output
+```
+
+`scripts/orchestrator.py` 当前是治理外壳，不会调用付费或远程素材生成服务。它会写入：
+
+- `.md2video-pipeline.jsonl`：每个治理步骤的结构化日志
+- `output/dry-run/run-manifest.json`：输入 hash、仓库状态、环境版本、关键产物指纹和步骤结果
+
+CI 也会跑这一套 dry-run，防止入口契约、QR registry、导入路由或 self-report no-write 行为漂移。
 
 ### Step 0：分镜拆解
 
