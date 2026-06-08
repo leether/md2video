@@ -87,6 +87,14 @@ def save_json(path: Path, data: Any) -> None:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
+def reset_generated_subdirs(run_dir: Path) -> None:
+    """Remove reproducible per-run media dirs before rebuilding a demo video."""
+    for name in ("scenes", "dreamina_downloads", "narration_segments"):
+        target = run_dir / name
+        if target.exists():
+            shutil.rmtree(target)
+
+
 def parse_json_maybe(text: str) -> dict[str, Any]:
     text = text.strip()
     if not text:
@@ -366,16 +374,17 @@ def font(size: int) -> ImageFont.ImageFont:
 def wrap_text(draw: ImageDraw.ImageDraw, text: str, face: ImageFont.ImageFont, max_width: int) -> list[str]:
     lines: list[str] = []
     current = ""
-    for char in text:
-        candidate = current + char
+    tokens = re.findall(r"[A-Za-z0-9_+.-]+|\s+|.", text)
+    for token in tokens:
+        candidate = current + token
         bbox = draw.textbbox((0, 0), candidate, font=face)
         if current and bbox[2] - bbox[0] > max_width:
-            lines.append(current)
-            current = char
+            lines.append(current.rstrip())
+            current = token.lstrip()
         else:
             current = candidate
     if current:
-        lines.append(current)
+        lines.append(current.rstrip())
     return lines
 
 
@@ -448,6 +457,20 @@ def draw_footer(draw: ImageDraw.ImageDraw, segment_type: str) -> None:
     draw.text((96, HEIGHT - 132), label, fill=(28, 48, 58), font=face)
 
 
+def narrative_title(text: str) -> str:
+    if "Codex" in text or "模型" in text:
+        return "不是模型的问题"
+    if "笨办法" in text or "四行" in text or "第一" in text:
+        return "四行笨办法"
+    if "运行证明" in text or "证据" in text:
+        return "没有证据，就别说完成"
+    if "提示词" in text:
+        return "回头看结果"
+    if "prompt" in text:
+        return "先写那四行"
+    return "从临场发挥到稳定流程"
+
+
 def render_hook(segment: dict[str, Any], output_path: Path) -> None:
     img, draw = base_image((10, 25, 33))
     accent = (77, 191, 172)
@@ -457,10 +480,10 @@ def render_hook(segment: dict[str, Any], output_path: Path) -> None:
         draw.line([(80, y), (WIDTH - 80, y - 80)], fill=color, width=6)
     draw.rounded_rectangle([80, 220, WIDTH - 80, 1180], radius=36, fill=(17, 43, 52), outline=accent, width=3)
     draw.text((116, 280), "md2video", fill=accent, font=font(42))
-    title = "三分钟建立可复用的 AI 工作流"
+    title = segment["text"]
     lines = wrap_text(draw, title, font(86), WIDTH - 220)
     draw_centered_lines(draw, lines, 470, font(86), (245, 249, 250), 26)
-    subtitle_lines = wrap_text(draw, "把一次性的聊天，变成可复核、可复用、可改进的流程。", font(48), WIDTH - 260)
+    subtitle_lines = wrap_text(draw, "先把临场发挥，改成能回头看的流程。", font(48), WIDTH - 260)
     draw_centered_lines(draw, subtitle_lines, 820, font(48), (194, 222, 224), 20)
     for idx, label in enumerate(["输入", "规则", "验证", "交付"]):
         x = 150 + idx * 205
@@ -473,7 +496,8 @@ def render_hook(segment: dict[str, Any], output_path: Path) -> None:
 def render_narrative(segment: dict[str, Any], output_path: Path) -> None:
     img, draw = base_image((244, 247, 246))
     draw.rounded_rectangle([72, 120, WIDTH - 72, 340], radius=28, fill=(20, 57, 69))
-    draw.text((112, 170), "从零散提问到稳定流程", fill=(255, 255, 255), font=font(58))
+    title = narrative_title(segment["text"])
+    draw.text((112, 170), title, fill=(255, 255, 255), font=font(58))
     body = segment["text"]
     lines = wrap_text(draw, body, font(48), WIDTH - 180)
     y = 460
@@ -523,7 +547,7 @@ def render_data(segment: dict[str, Any], output_path: Path) -> None:
 def render_list(segment: dict[str, Any], output_path: Path) -> None:
     img, draw = base_image((238, 244, 243))
     draw.text((80, 130), "四个固定动作", fill=(28, 48, 58), font=font(70))
-    items = ["写清楚输入", "写清楚输出", "列出失败检查", "留下验证命令"]
+    items = ["输入是什么", "结果长什么样", "失败先查哪里", "证据怎么算完成"]
     for idx, item in enumerate(items):
         y = 350 + idx * 275
         draw.rounded_rectangle([95, y, WIDTH - 95, y + 190], radius=28, fill=(255, 255, 255), outline=(198, 214, 216), width=2)
@@ -536,7 +560,8 @@ def render_list(segment: dict[str, Any], output_path: Path) -> None:
 
 def render_date(segment: dict[str, Any], output_path: Path) -> None:
     img, draw = base_image((247, 248, 244))
-    draw.text((90, 120), "2026 年 6 月 8 日", fill=(28, 48, 58), font=font(68))
+    title = "2026 年 6 月 8 日" if "2026" in segment["text"] else "留下运行证明"
+    draw.text((90, 120), title, fill=(28, 48, 58), font=font(68))
     draw.rounded_rectangle([100, 270, WIDTH - 100, 1220], radius=30, fill=(255, 255, 255), outline=(205, 216, 220), width=2)
     weekdays = ["一", "二", "三", "四", "五", "六", "日"]
     cell_w = 120
@@ -558,7 +583,7 @@ def render_date(segment: dict[str, Any], output_path: Path) -> None:
                 fill = (34, 53, 60)
             draw.text((x + 42 if day < 10 else x + 28, y), str(day), fill=fill, font=font(44))
             day += 1
-    proof = "每次交付前必须留下运行证明：日志、清单、检查报告和最终文件路径。"
+    proof = segment["text"]
     lines = wrap_text(draw, proof, font(46), WIDTH - 190)
     draw_centered_lines(draw, lines, 1350, font(46), (28, 48, 58), 18)
     draw_footer(draw, "date")
@@ -568,7 +593,7 @@ def render_date(segment: dict[str, Any], output_path: Path) -> None:
 def render_quote(segment: dict[str, Any], output_path: Path) -> None:
     img, draw = base_image((19, 33, 39))
     draw.rounded_rectangle([90, 280, WIDTH - 90, 1360], radius=36, fill=(247, 246, 239))
-    quote = "好提示词不是让 AI 显得聪明，而是让结果可以被复核、被复用、被改进。"
+    quote = segment["text"]
     draw.text((145, 360), '"', fill=(42, 139, 126), font=font(120))
     lines = wrap_text(draw, quote, font(60), WIDTH - 260)
     draw_centered_lines(draw, lines, 570, font(60), (28, 48, 58), 24)
@@ -821,6 +846,7 @@ def main() -> int:
         raise FileNotFoundError(input_path)
 
     run_dir.mkdir(parents=True, exist_ok=True)
+    reset_generated_subdirs(run_dir)
 
     env_report = discover_env_files()
     credit_report = check_dreamina_credit(args.dreamina_lock_wait) if not args.force_local else {"ok": False, "reason": "force_local"}

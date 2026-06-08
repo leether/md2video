@@ -152,6 +152,21 @@ python scripts/orchestrator.py \
 
 CI 也会跑这一套 dry-run，防止入口契约、QR registry、导入路由或 self-report no-write 行为漂移。
 
+### Step -0.5：旁白改写和 AI 味检查
+
+短视频脚本先过一遍“活人感”检查，再进入分镜。规则从 `md2wechat` 的
+`khazix-writer` 改写方法论吸收而来，但已经改成 md2video 的口播场景：
+少写报告腔，多写现场动作、具体工具名、运行证据和真人复盘。
+
+```bash
+python scripts/lint_narration_style.py \
+  --input examples/ai_workflow_video_script.md
+```
+
+硬规则会拦住“综上所述”“这意味着”“在当今……”这类套话、空泛工具名、
+超长段落和不利于 TTS 的标点。L2 只给风格提醒，例如口语化不足、缺少具体锚点、
+缺少疑问句转向。`scripts/preflight.py` 已自动接入这个检查。
+
 ### Step 0：分镜拆解
 
 **规则驱动，无需改代码。** 将文章输入 `storyboard_ai.py`，自动输出：

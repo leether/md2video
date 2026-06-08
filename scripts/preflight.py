@@ -17,6 +17,7 @@ DEFAULT_JSON_FILES = [
     "harness/video-rules.json",
     "rules/segment_types.json",
     "rules/storyboard_rules.json",
+    "rules/narration_style_rules.json",
     "cta_resources.json",
 ]
 
@@ -202,6 +203,54 @@ def check_input_text(input_path: Optional[Path]) -> dict:
     )
 
 
+def check_narration_style(input_path: Optional[Path]) -> dict:
+    if not input_path:
+        return result(
+            "narration_style",
+            "Narration anti-AI style lint",
+            "L1",
+            True,
+            "Skipped: no input file supplied",
+            True,
+            skipped=True,
+        )
+    if not input_path.exists():
+        return result(
+            "narration_style",
+            "Narration anti-AI style lint",
+            "L1",
+            False,
+            f"Input file does not exist: {input_path}",
+            True,
+            findings=["missing_input"],
+        )
+
+    sys.path.insert(0, str(REPO_ROOT))
+    lint = importlib.import_module("scripts.lint_narration_style")
+    report = lint.lint_narration_style(input_path.read_text(encoding="utf-8"))
+    l1_hits = report["l1"]["total_hits"]
+    l2_warnings = len(report["l2"]["warnings"])
+    if l1_hits:
+        return result(
+            "narration_style",
+            "Narration anti-AI style lint",
+            "L1",
+            False,
+            f"Narration style has {l1_hits} hard-rule hit(s)",
+            True,
+            report=report,
+        )
+    return result(
+        "narration_style",
+        "Narration anti-AI style lint",
+        "L1",
+        True,
+        f"Narration hard style passed; {l2_warnings} L2 warning(s)",
+        True,
+        report=report,
+    )
+
+
 def check_output_dir(output_dir: Path, allow_dirty_output: bool = False) -> dict:
     known_artifacts = [
         "segments.json",
@@ -278,6 +327,7 @@ def run_preflight(
         check_animation_routing(),
         check_cta_resources(),
         check_input_text(input_path),
+        check_narration_style(input_path),
         check_output_dir(output_dir, allow_dirty_output=allow_dirty_output),
     ])
 
