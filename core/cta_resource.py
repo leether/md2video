@@ -40,7 +40,14 @@ class CTAResource:
     target_account: str          # 账号名/ID
     media_path: str              # 资源文件路径
     media_type: str = "image"    # image | video
-    checksum: str = ""           # URL 的 SHA256 校验和
+    checksum: str = ""           # target_url 的短 SHA256 校验和
+    media_sha256: str = ""       # 资源文件内容 SHA256
+    source_repo: str = ""        # 资源来源仓库，如 leether/md2wechat
+    source_path: str = ""        # 来源仓库内路径
+    source_sha256: str = ""      # 来源文件内容 SHA256
+    media_format: str = ""       # Pillow 识别的格式，如 JPEG/PNG
+    pixel_width: int = 0         # 图片宽度
+    pixel_height: int = 0        # 图片高度
     generated_at: str = ""       # ISO 时间戳
     notes: str = ""              # 备注
     valid: bool = True           # 校验结果
@@ -95,6 +102,23 @@ class CTAResourceManager:
     def _compute_checksum(self, url: str) -> str:
         """计算 URL 校验和"""
         return hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+
+    def _compute_media_sha256(self, path: Path) -> str:
+        """计算资源文件内容 SHA256"""
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    def _inspect_image(self, path: Path) -> Dict[str, object]:
+        """读取图片格式和尺寸"""
+        with Image.open(path) as img:
+            return {
+                "media_format": img.format or "",
+                "pixel_width": img.width,
+                "pixel_height": img.height,
+            }
 
     def generate_qrcode(
         self,
@@ -192,6 +216,8 @@ class CTAResourceManager:
         target_platform: str,
         target_account: str,
         resource_id: str = "cta_qrcode_main",
+        source_repo: str = "",
+        source_path: str = "",
     ) -> CTAResource:
         """
         注册已有图片作为 CTA 二维码资源（如 assets/qr.png）
@@ -202,6 +228,9 @@ class CTAResourceManager:
         if not path.exists():
             raise FileNotFoundError(f"二维码图片不存在: {image_path}")
 
+        image_meta = self._inspect_image(path)
+        media_sha256 = self._compute_media_sha256(path)
+
         resource = CTAResource(
             id=resource_id,
             resource_type="qrcode",
@@ -211,6 +240,13 @@ class CTAResourceManager:
             media_path=str(path),
             media_type="image",
             checksum=self._compute_checksum(target_url),
+            media_sha256=media_sha256,
+            source_repo=source_repo,
+            source_path=source_path,
+            source_sha256=media_sha256 if source_repo or source_path else "",
+            media_format=str(image_meta["media_format"]),
+            pixel_width=int(image_meta["pixel_width"]),
+            pixel_height=int(image_meta["pixel_height"]),
             valid=True,
             notes=f"Registered existing image: {path.name}",
         )
@@ -239,12 +275,21 @@ class CTAResourceManager:
         """
         errors = []
         for r in self.resources:
-            if not r.target_url or not r.target_url.startswith(("http://", "https://")):
+            if not r.target_url or not r.target_url.startswith(("http://", "https://", "wechat://")):
                 errors.append(f"[{r.id}] URL 格式非法: {r.target_url}")
             if not r.target_account:
                 errors.append(f"[{r.id}] target_account 为空")
             if r.checksum != self._compute_checksum(r.target_url):
                 errors.append(f"[{r.id}] checksum 不匹配，URL 可能已被篡改")
+            media_path = Path(r.media_path)
+            if media_path.is_absolute():
+                errors.append(f"[{r.id}] media_path 必须使用仓库相对路径")
+            else:
+                full_media_path = self.registry_path.parent / media_path
+                if not full_media_path.exists():
+                    errors.append(f"[{r.id}] media_path 不存在: {r.media_path}")
+                elif r.media_sha256 and r.media_sha256 != self._compute_media_sha256(full_media_path):
+                    errors.append(f"[{r.id}] media_sha256 不匹配，二维码文件可能已被替换")
             if not r.valid:
                 errors.append(f"[{r.id}] 二维码可扫描性校验失败")
         return errors
