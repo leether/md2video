@@ -22,6 +22,7 @@ MODULES = [
     "harness.harness",
     "harness.memory_loader",
     "harness.self_report",
+    "scripts.lint_narration_style",
     "scripts.preflight",
     "scripts.orchestrator",
 ]

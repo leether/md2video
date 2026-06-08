@@ -161,6 +161,8 @@ python scripts/preflight.py --input examples/example_article.md --skip-command-c
 ```
 article.md
     ↓
+lint_narration_style → 旁白活人感 / 反套话检查
+    ↓
 storyboard_ai → shots.json + segments_hint.json + prompts.json
     ↓
 segment_tts → segments.json（精确时长）
@@ -180,6 +182,7 @@ harness → compliance_report.json
 
 | 组件 | 核心原则 |
 |------|---------|
+| `lint_narration_style` | 吸收 md2wechat/khazix-writer 的改写方法论，拦截报告腔、套话、空泛工具名和 TTS 不友好的标点 |
 | `segment_tts` | 按语义切分，独立生成，ffprobe 精确测时长 |
 | `timeline_mapper` | Single Source of Truth，程序化对齐，L1 硬阻塞校验，Clip 模型支持 fade/transition |
 | `concat_engine` | **双路径策略**：无特效→`-c copy` 快速路径；有特效→filter_complex (xfade) + Python numpy 音频混合。`acrossfade` 无 `offset` 参数已被废弃，音频用 `adelay`+`amix` 或 Python 逐段叠加 |

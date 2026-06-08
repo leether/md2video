@@ -101,6 +101,22 @@ friction_points:
             self.assertFalse((project / "output" / "self_report.json").exists())
             self.assertEqual(data["friction_summary"]["total"], 1)
 
+    def test_narration_style_lint_blocks_report_voice(self):
+        lint = load_module("lint_narration_style", REPO_ROOT / "scripts" / "lint_narration_style.py")
+
+        bad_script = "在当今AI快速发展的时代，首先让我们来看看AI工具。这意味着什么？"
+        bad_report = lint.lint_narration_style(bad_script)
+        self.assertFalse(bad_report["passed"])
+        self.assertGreater(bad_report["l1"]["total_hits"], 0)
+
+        good_script = (
+            "事情是这样的。昨天我让 Codex 帮我收尾，十分钟后发现自己漏了检查报告。\n\n"
+            "说真的，我当时就在想，我到底漏了什么？\n\n"
+            "后来我只留四行，输入、输出、失败检查、运行证据。这玩意很笨，但有效。"
+        )
+        good_report = lint.lint_narration_style(good_script, strict=True)
+        self.assertTrue(good_report["passed"])
+
 
 if __name__ == "__main__":
     unittest.main()

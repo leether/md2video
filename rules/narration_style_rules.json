@@ -1,0 +1,141 @@
+{
+  "_source": "Adapted from md2wechat references/khazix-writer, derived from KKKKhazix/Khazix-Skills under the MIT License.",
+  "_description": "Narration style rules for md2video. L1 rules block pipeline readiness; L2 rules warn about script voice and rhythm.",
+  "version": "1.0.0",
+  "l1_banned_words": [
+    "说白了",
+    "意味着什么",
+    "这意味着",
+    "本质上",
+    "换句话说",
+    "不可否认",
+    "综上所述",
+    "总的来说",
+    "值得注意的是",
+    "不难发现",
+    "让我们来看看",
+    "接下来让我们",
+    "在当今",
+    "随着技术"
+  ],
+  "l1_banned_words_replacements": {
+    "说白了": "坦率的讲 / 其实就是",
+    "意味着什么": "那结果会怎样",
+    "这意味着": "所以呢",
+    "本质上": "说到底 / 其实",
+    "换句话说": "你想想看 / 也就是说",
+    "不可否认": "直接正面陈述",
+    "综上所述": "用具体回扣句替代",
+    "总的来说": "用具体回扣句替代",
+    "值得注意的是": "删掉，直接说",
+    "不难发现": "删掉，直接说",
+    "让我们来看看": "删掉，直接进入画面",
+    "接下来让我们": "删掉，直接进入画面",
+    "在当今": "换成具体时间、场景或动作",
+    "随着技术": "换成具体工具或事件"
+  },
+  "l1_banned_punctuation": [
+    {
+      "char": "——",
+      "reason": "破折号会让 TTS 节奏僵硬，改用逗号或句号",
+      "replacement": "，"
+    },
+    {
+      "char": "“",
+      "reason": "中文双引号改用「」或直接不加",
+      "replacement": "「"
+    },
+    {
+      "char": "”",
+      "reason": "中文双引号改用「」或直接不加",
+      "replacement": "」"
+    }
+  ],
+  "l2_banned_punctuation": [
+    {
+      "char": "：",
+      "reason": "中文冒号偏报告腔，口播脚本优先用逗号",
+      "replacement": "，"
+    }
+  ],
+  "l1_banned_structures": [
+    "首先.*其次.*最后",
+    "让我们来看看",
+    "接下来让我们",
+    "在当今.*时代",
+    "随着.*不断.*发展",
+    "随着.*快速.*发展",
+    "本文将"
+  ],
+  "l1_banned_vague_tools": [
+    "AI工具",
+    "某个模型",
+    "相关技术",
+    "某AI",
+    "一些工具",
+    "相关工具"
+  ],
+  "l1_max_paragraph_chars": 220,
+  "l2_no_go_openings": [
+    "在当今.*时代",
+    "随着.*不断.*发展",
+    "随着.*快速.*发展",
+    "众所周知",
+    "不可否认的是"
+  ],
+  "l2_min_colloquial_expressions": 2,
+  "l2_colloquial_expressions": [
+    "坦率的讲",
+    "说真的",
+    "我是真的觉得",
+    "反正我觉得",
+    "怎么说呢",
+    "其实吧",
+    "你想想看",
+    "我跟你说",
+    "回到.*这块",
+    "这块需要注意",
+    "顺着上面的",
+    "我有时候觉得",
+    "我一直觉得",
+    "我自己的感受是",
+    "我自己也还在摸索",
+    "说实话",
+    "我也不知道",
+    "我当时就",
+    "想想就觉得",
+    "太离谱了",
+    "这玩意",
+    "不是哥们",
+    "我寻思",
+    "真的就是",
+    "你敢信",
+    "一时间",
+    "听着有点",
+    "别急着"
+  ],
+  "l2_min_concrete_anchors": 2,
+  "l2_concrete_anchor_patterns": [
+    "\\d{4}\\s*年",
+    "\\d+\\s*分钟",
+    "Codex",
+    "ChatGPT",
+    "Claude",
+    "Seedance",
+    "即梦",
+    "日志",
+    "清单",
+    "检查报告",
+    "文件路径",
+    "我"
+  ],
+  "l2_min_question_marks": 1,
+  "l2_sentence_variance_threshold": 6,
+  "l2_max_consecutive_similar_length": 4,
+  "l3_manual_checks": [
+    "开头是否从具体动作或具体现场切入，而不是价值观口号",
+    "每段是否有画面、动作、工具名或证据，不只是在讲抽象道理",
+    "是否有一句不完美但真实的判断，让口播像真人复盘",
+    "结尾是否给一个马上能做的小动作，而不是泛泛号召"
+  ]
+}
