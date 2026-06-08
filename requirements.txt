@@ -13,6 +13,9 @@ scipy>=1.10.0
 # Required: for CTA qrcode generation
 qrcode[pil]>=7.4.0
 
+# Test dependencies
+pytest>=8.0.0
+
 # Optional: for qrcode scannability validation
 # pyzbar>=0.1.9
 
