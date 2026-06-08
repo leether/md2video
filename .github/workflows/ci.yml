@@ -20,19 +20,15 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pillow numpy
+          pip install -r requirements.txt
 
       - name: Python syntax check
         run: |
-          python -m py_compile core/segment_tts.py
-          python -m py_compile core/timeline_mapper.py
-          python -m py_compile core/concat_engine.py
-          python -m py_compile core/cta_resource.py
-          python -m py_compile core/frame_extractor.py
-          python -m py_compile harness/self_report.py
-          python -m py_compile harness/harness.py
-          python -m py_compile extensions/storyboard/storyboard_ai.py
-          python -m py_compile extensions/animations/animation_templates.py
+          python -m py_compile $(git ls-files '*.py')
+
+      - name: Import and routing smoke check
+        run: |
+          python scripts/smoke_imports.py
 
       - name: JSON validation
         run: |

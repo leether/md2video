@@ -135,7 +135,7 @@ class TimelineMapper:
         if segment_id in scenes:
             p = scenes[segment_id]
             media_type = "video" if p.suffix.lower() in (".mp4", ".mov") else "image"
-            return str(p.relative_to(Path.cwd())), media_type
+            return str(p.resolve().relative_to(Path.cwd())), media_type
 
         explicit_path = prompt_entry.get("media_path", prompt_entry.get("fallback_path", ""))
         if explicit_path and Path(explicit_path).exists():
@@ -193,7 +193,10 @@ class TimelineMapper:
                 notes=prompt_entry.get("notes", prompt_entry.get("description", "")),
             )
             timeline.append(entry)
-            current_time += duration
+            if trans:
+                current_time += duration - trans.get("duration", 0.0)
+            else:
+                current_time += duration
 
         self.timeline = timeline
         return timeline
@@ -203,7 +206,7 @@ class TimelineMapper:
         data = {
             "generator": "md2video.timeline_mapper",
             "version": "1.1.0",
-            "total_duration": sum(e.duration for e in self.timeline),
+            "total_duration": self.timeline[-1].end_time if self.timeline else 0.0,
             "segment_count": len(self.timeline),
             "has_effects": any(
                 e.fade_in > 0 or e.fade_out > 0 or e.transition is not None

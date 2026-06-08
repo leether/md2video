@@ -277,7 +277,15 @@ def render_animation(template_id: str, params_dict: dict, output_path: str, conf
         config: 可选的全局配置
     """
     if template_id not in ANIMATION_REGISTRY:
-        raise ValueError(f"未知模板: {template_id}。可用: {list(ANIMATION_REGISTRY.keys())}")
+        from extensions.animations.animation_templates import render_animation as render_extended_animation
+
+        duration = params_dict.get("duration", config.duration if config else 5.0)
+        return render_extended_animation(
+            template_id,
+            params_dict,
+            duration=duration,
+            output_path=output_path,
+        )
 
     template_cls, params_cls = ANIMATION_REGISTRY[template_id]
     params = params_cls(**params_dict)

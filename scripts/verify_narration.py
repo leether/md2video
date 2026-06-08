@@ -3,7 +3,7 @@
 旁白音频质检脚本 —— 验证最终视频中每个 segment 的音频是否与原始 TTS 一致
 
 原理：从最终视频中提取每个 segment 对应时间段的音频，与原始 TTS mp3 计算
-皮尔逊相关系数。如果相关系数 > 0.3，认为是同一音频（旁白正确混入）。
+小延迟窗口内的最大绝对皮尔逊相关系数。如果相关系数 > 0.3，认为是同一音频（旁白正确混入）。
 
 用法：
     python scripts/verify_narration.py output/final.mp4 output/timeline.json output/narration_segments
@@ -41,7 +41,7 @@ def load_mono_wav(path: str) -> np.ndarray:
     return np.frombuffer(result.stdout, dtype=np.int16).astype(np.float32)
 
 
-def pearson_corr(a: np.ndarray, b: np.ndarray) -> float:
+def _pearson_corr_aligned(a: np.ndarray, b: np.ndarray) -> float:
     min_len = min(len(a), len(b))
     a = a[:min_len]
     b = b[:min_len]
@@ -51,6 +51,24 @@ def pearson_corr(a: np.ndarray, b: np.ndarray) -> float:
     if denom == 0:
         return 0.0
     return float(np.sum(a * b) / denom)
+
+
+def pearson_corr(a: np.ndarray, b: np.ndarray, max_lag_seconds: float = 0.08, sample_rate: int = 48000) -> float:
+    """Return max absolute correlation, allowing small codec delay offsets."""
+    max_lag = int(max_lag_seconds * sample_rate)
+    step = max(1, sample_rate // 200)  # 5ms
+    best = 0.0
+
+    for lag in range(-max_lag, max_lag + 1, step):
+        if lag < 0:
+            corr = _pearson_corr_aligned(a[:lag], b[-lag:])
+        elif lag > 0:
+            corr = _pearson_corr_aligned(a[lag:], b[:-lag])
+        else:
+            corr = _pearson_corr_aligned(a, b)
+        best = max(best, abs(corr))
+
+    return best
 
 
 def verify(video_path: str, timeline_path: str, audio_dir: str, threshold: float = 0.30):
