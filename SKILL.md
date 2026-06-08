@@ -157,10 +157,10 @@ harness → compliance_report.json
 |------|---------|
 | `segment_tts` | 按语义切分，独立生成，ffprobe 精确测时长 |
 | `timeline_mapper` | Single Source of Truth，程序化对齐，L1 硬阻塞校验，Clip 模型支持 fade/transition |
-| `concat_engine` | **双路径策略**：无特效→`-c copy` 快速路径；有特效→filter_complex (xfade+acrossfade) |
+| `concat_engine` | **双路径策略**：无特效→`-c copy` 快速路径；有特效→filter_complex (xfade) + Python numpy 音频混合。`acrossfade` 无 `offset` 参数已被废弃，音频用 `adelay`+`amix` 或 Python 逐段叠加 |
 | `frame_extractor` | "不要在脑子里检查"，必须回读 PNG 帧 |
 | `harness` | 自动触发，逐项核查，L1 失败阻断 |
-| `bg_audio_mixer` | 即梦素材提取背景音→loudnorm标准化→循环填充→amix混入（旁白立体声化，背景≤35%） |
+| `bg_audio_mixer` | 检测源素材音频流→有则 `amix` 混合（背景 `volume=0.2`，TTS `volume=1.0`，总输出 `volume=0.8` 防 clipping）；无则直接替换。禁止 `-an` 丢弃原始音频 |
 | `animation_timing` | 动画文字必须在视频开始后5%时间内出现，禁止长 fade-in 让观众干等 |
 
 ## 质检体系（三层）
@@ -369,8 +369,11 @@ python your_pipeline.py
 2. frame_extractor 的文字重叠检测依赖 pytesseract（可选）
 3. L3 模式检查中的箭头方向、颜色语义、内容事实准确性需要人工确认
 4. 中文字体硬编码为 Hiragino Sans GB（macOS），其他平台需修改
-5. **背景音频提取**：即梦素材标准化时须保留原音频流，单独提取后混入，禁止 `-an` 直接丢弃
-6. **TTS voice 一致性**：全部 segment 必须用同一 voice 生成，禁止混用不同 session 的音频
+5. **背景音频提取**：即梦素材标准化时须保留原音频流，单独提取后混入，禁止 `-an` 直接丢弃。TTS 混入时检测源素材是否有音频流，有则混合保留（背景 20%），无则直接替换
+6. **`-shortest` 与 `apad` 冲突**：`apad` pad 静音时不能加 `-shortest`，否则 ffmpeg 在原始音频 EOF 时立即停止。移除 `-shortest`，用 `-t` 作为输出选项限制时长
+7. **时长阈值**：`abs(raw-target)<0.1` 会导致 filter_complex offset 累积错位，必须收紧至 `0.001s`
+8. **`acrossfade` 无 `offset`**：ffmpeg `acrossfade` 滤镜没有 `offset` 参数，无法与 `xfade` 同步。音频混合必须用 Python numpy 逐段叠加，或 `adelay`+`amix`（但 `amix=inputs>20` 易 OOM）
+9. **TTS voice 一致性**：全部 segment 必须用同一 voice 生成，禁止混用不同 session 的音频
 7. **TTS 文本预处理**：Markdown 分隔符 `---` 和 `~` 会导致 edge-tts 失败，必须在生成前替换
 
 ## Autopoiesis Governance
@@ -423,5 +426,12 @@ python harness/self_report.py --capture "素材遗漏" "s22 场景缺失" "补�
 - **闭环**：每个摩擦点的 `rule_id` 指向 `video-rules.json` 中的对应项
 
 ## 版本
+
+v1.3.0 — ConcatEngine 音频架构重写：
+- 废弃 `acrossfade` 链式混合（无 `offset` 参数导致音画错位）
+- 音频混合从 ffmpeg filter_complex 迁移到 Python+numpy（解决 `amix=inputs=49` OOM）
+- 修复 `apad`+`-shortest` 冲突、时长阈值 0.1→0.001s
+- TTS 混入支持原始背景音乐保留（`amix` 混合，背景 20%）
+- 旁白质检脚本 `verify_narration.py` 自动校验 49 段皮尔逊相关系数
 
 v1.2.0 — 自创生系统完整迁移：活记忆运行时加载（memory_loader）、摩擦点→规则演化闭环（self_report）、L3 规则扩展（v5 实战教训编码）、Harness 自动运行
