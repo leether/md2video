@@ -730,7 +730,7 @@ class ConcatEngine:
 
         # 验证输出
         output_duration = self._probe_duration(output_video)
-        expected_duration = sum(e["duration"] for e in self.timeline)
+        expected_duration = self.timeline[-1].get("end_time", sum(e["duration"] for e in self.timeline))
         print(f"[ConcatEngine] 输出完成: {output_video}")
         print(f"[ConcatEngine] 预期时长: {expected_duration:.2f}s, 实际时长: {output_duration:.2f}s, 差值: {abs(output_duration - expected_duration):.3f}s")
 

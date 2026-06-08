@@ -23,7 +23,7 @@ import subprocess
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 
 import edge_tts
 

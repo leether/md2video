@@ -2,12 +2,13 @@
 
 ## Metadata
 - Task ID: `TC-2026-06-08-pipeline-consistency`
-- Status: `open`
+- Status: `implemented`
 - Created: `2026-06-08`
 - Owner: `unassigned`
 - Repo: `md2video`
 - Primary layer: `code`
 - Secondary layers: `docs`, `ci`, `runtime-validation`
+- Implemented: `2026-06-08`
 
 ## Objective
 Make the repository's documented article-to-video pipeline runnable enough for local development by fixing import/runtime blockers, aligning examples with current APIs, removing animation-router ambiguity, and tightening CI so these regressions are caught automatically.
@@ -98,3 +99,33 @@ PY
 
 ## Handoff Notes
 The smallest safe repair is to fix `core.segment_tts`, align `examples/example_pipeline.py`, and add import smoke coverage to CI. Animation routing is the main design choice: prefer one canonical router and leave the older import path as a compatibility layer if practical.
+
+## Implementation Notes
+- Added the missing `Tuple` import so `core.segment_tts` imports in a dependency-complete environment.
+- Updated the example TTS callback to accept `segment_type`.
+- Routed the example pipeline to the broader animation renderer and added safe default animation variables for rule-generated prompts.
+- Kept the legacy `extensions.animation_templates.base.render_animation` entrypoint as a compatibility wrapper for newer animation types.
+- Added `scripts/smoke_imports.py` and wired CI to install `requirements.txt` before import/routing smoke checks.
+- Fixed `TimelineMapper` relative media path resolution for relative `scenes_dir` paths.
+- Aligned `TimelineMapper` saved start/end times with transition overlap semantics used by `ConcatEngine`.
+- Made `FrameExtractor` degrade gracefully when optional `scipy` is unavailable.
+- Changed frame sampling to avoid exact segment boundaries and EOF-sensitive frames.
+- Made narration verification tolerate small codec delay and phase inversion by using max absolute Pearson correlation over a small lag window.
+- Corrected `ConcatEngine` expected-duration logging to use timeline end time when transitions overlap clips.
+
+## Validation Results
+- `python -m py_compile` passed for tracked Python files plus the new smoke script.
+- `scripts/smoke_imports.py` passed: core imports and rule-driven animation routing validated.
+- Offline E2E passed in a temporary working directory with 5 generated segments and no transitions:
+  - article -> storyboard inputs
+  - generated local sine narration MP3 files
+  - generated local ffmpeg test videos
+  - `TimelineMapper` triple consistency
+  - `ConcatEngine` final MP4
+  - `FrameExtractor` report
+  - `VideoComplianceHarness` with no L1 failures
+  - `scripts/verify_narration.py` passed 5/5 segment correlations
+- Offline E2E with storyboard-generated transitions passed in a temporary working directory with 6 generated segments:
+  - `ConcatEngine` exercised the filter_complex effect path
+  - `VideoComplianceHarness` reported no L1 failures
+  - `scripts/verify_narration.py` passed 6/6 segment correlations

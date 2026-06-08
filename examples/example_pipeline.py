@@ -32,8 +32,31 @@ from core.frame_extractor import FrameExtractor
 from core.cta_resource import generate_qr_cta, CTAResourceManager
 from harness.harness import VideoComplianceHarness
 from extensions.storyboard.storyboard_ai import storyboard_from_article
-from extensions.animation_templates.base import render_animation
+from extensions.animations.animation_templates import render_animation
 from extensions.prompt_templates.base import PromptTemplateLibrary
+
+
+def _animation_vars_with_defaults(animation_type: str, vars_dict: dict, text: str = "") -> dict:
+    """Fill minimal safe vars for rule-generated animation prompts."""
+    vars_dict = dict(vars_dict or {})
+    text = text.strip()
+
+    defaults = {
+        "animated_text": {"text": text or "核心信息"},
+        "bar_chart": {"data": [("Before", 1), ("After", 3)]},
+        "pie_chart": {"data": [("A", 40), ("B", 60)]},
+        "trend_line": {"points": [1, 2, 3, 5, 8]},
+        "comparison_split": {"left": "Before", "right": "After"},
+        "table_scroll": {"headers": ["Item", "Value"], "rows": [["A", "1"], ["B", "3"]]},
+        "bullet_list": {"items": [text] if text else ["要点一", "要点二"], "title": "核心要点"},
+        "calendar_highlight": {"year": 2026, "month": 6, "highlight_day": 8},
+        "quote_card": {"quote": text or "核心观点", "author": ""},
+    }
+
+    for key, value in defaults.get(animation_type, {}).items():
+        if not vars_dict.get(key):
+            vars_dict[key] = value
+    return vars_dict
 
 
 def step1_storyboard(article_path: str = "examples/example_article.md"):
@@ -63,7 +86,7 @@ def step2_generate_tts():
 
     gen = SegmentedTTSGenerator(output_dir="output")
     gen.split_by_semantic("", scene_hints=hints)
-    asyncio.run(gen.generate_all(progress_callback=lambda sid, dur: print(f"  {sid}: {dur:.2f}s")))
+    asyncio.run(gen.generate_all(progress_callback=lambda sid, dur, seg_type: print(f"  {sid} [{seg_type}]: {dur:.2f}s")))
     manifest = gen.save_manifest()
     print(f"✅ TTS 已保存: {manifest}")
     return manifest
@@ -83,6 +106,18 @@ def step3_generate_scenes(budget_limit: int = 500):
 
     with open("prompts.json", "r", encoding="utf-8") as f:
         prompts = json.load(f)
+    segment_meta = {}
+    segments_path = Path("output/segments.json")
+    if segments_path.exists():
+        with open(segments_path, "r", encoding="utf-8") as f:
+            segments_data = json.load(f)
+        segment_meta = {
+            s["id"]: {
+                "duration": float(s.get("duration", 5.0) or 5.0),
+                "text": s.get("text", ""),
+            }
+            for s in segments_data.get("segments", [])
+        }
 
     lib = PromptTemplateLibrary(budget_limit=budget_limit)
 
@@ -93,7 +128,10 @@ def step3_generate_scenes(budget_limit: int = 500):
             output_path = f"rebuild_animations/{p['id']}.mp4"
             print(f"  生成动画: {p['id']} -> {output_path}")
             try:
-                render_animation(anim_type, p.get("vars", {}), output_path)
+                meta = segment_meta.get(p["id"], {})
+                duration = meta.get("duration", p.get("duration", 5.0))
+                vars_dict = _animation_vars_with_defaults(anim_type, p.get("vars", {}), meta.get("text", ""))
+                render_animation(anim_type, vars_dict, duration=duration, output_path=output_path)
             except Exception as e:
                 print(f"  ⚠️ 动画生成失败: {e}")
         else:

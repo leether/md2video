@@ -108,7 +108,10 @@ class FrameExtractor:
         # 转换为二值，检测大的连通区域
         gray = np.array(img.convert("L"))
         # 边缘检测：如果图像有大量文字，边缘会很多；如果大面积是方框，边缘集中在方框边界
-        from scipy import ndimage
+        try:
+            from scipy import ndimage
+        except ImportError:
+            return True, "未安装 scipy，跳过 emoji 方块启发式检测"
         edges = ndimage.sobel(gray)
         edge_density = (edges > 20).sum() / edges.size
 
@@ -183,8 +186,10 @@ class FrameExtractor:
             if self.config.frames_per_segment == 1:
                 timestamps = [start_time + duration / 2]
             else:
+                # Sample inside the segment instead of exactly on boundaries. End
+                # timestamps can land on EOF after concat/codec rounding.
                 timestamps = [
-                    start_time + duration * i / (self.config.frames_per_segment - 1)
+                    start_time + duration * (i + 1) / (self.config.frames_per_segment + 1)
                     for i in range(self.config.frames_per_segment)
                 ]
 

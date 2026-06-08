@@ -40,6 +40,24 @@ from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 
 
+SUPPORTED_ANIMATION_TYPES = {
+    "animated_text",
+    "bar_chart",
+    "pie_chart",
+    "trend_line",
+    "comparison_split",
+    "table_scroll",
+    "bullet_list",
+    "calendar_highlight",
+    "quote_card",
+}
+
+
+def available_animation_types() -> List[str]:
+    """Return animation_type values accepted by AnimationRenderer.render_by_type."""
+    return sorted(SUPPORTED_ANIMATION_TYPES)
+
+
 @dataclass
 class AnimationTemplate:
     """模板定义"""
@@ -484,9 +502,9 @@ class AnimationRenderer:
         start_y = 350
 
         # 动画参数
-        grid_appear_frame = int(total_frames * 0.3)
+        grid_appear_frame = max(1, int(total_frames * 0.3))
         highlight_start = int(total_frames * 0.5)
-        highlight_end = int(total_frames * 0.85)
+        highlight_end = max(highlight_start + 1, int(total_frames * 0.85))
 
         for frame_idx in range(total_frames):
             img = self._create_base_frame(bg_color)
@@ -601,8 +619,8 @@ class AnimationRenderer:
         card_w = self.width - 120
 
         # 动画参数：文字尽快出现，不让观众等
-        fade_in_end = int(total_frames * 0.03)  # 3%时间完成卡片渐入
-        quote_end = int(total_frames * 0.20)    # 20%时间完成文字显示
+        fade_in_end = max(1, int(total_frames * 0.03))  # 3%时间完成卡片渐入
+        quote_end = max(fade_in_end + 1, int(total_frames * 0.20))    # 20%时间完成文字显示
         hold_end = total_frames
 
         for frame_idx in range(total_frames):
@@ -730,7 +748,7 @@ class AnimationRenderer:
         }
 
         if animation_type not in renderers:
-            raise ValueError(f"Unknown animation_type: {animation_type}. Available: {list(renderers.keys())}")
+            raise ValueError(f"Unknown animation_type: {animation_type}. Available: {available_animation_types()}")
 
         return renderers[animation_type]()
 
