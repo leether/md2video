@@ -78,10 +78,40 @@ friction_points:
     resolution: "超时自动降级为 animation_templates 替代方案"
     rule_id: "jimeng_timeout_fallback"
     timestamp: "2026-06-06T23:00:00+08:00"
+  - id: "f014"
+    category: "音频混音"
+    description: "ffmpeg acrossfade 滤镜没有 offset 参数，音频全部从0时刻混合，与视频 xfade offset 完全错位"
+    resolution: "放弃 acrossfade 链式混合，改用 Python+numpy 按 start_time 精确叠加音频样本"
+    rule_id: "acrossfade_no_offset"
+    timestamp: "2026-06-07T19:00:00+08:00"
+  - id: "f015"
+    category: "音频混音"
+    description: "amix=inputs=49 需要同时解码49个音频流，内存超3.9GB被系统 SIGKILL"
+    resolution: "音频混合从 ffmpeg filter_complex 迁移到 Python numpy，逐段提取叠加，内存降至~70MB"
+    rule_id: "amix_memory_limit"
+    timestamp: "2026-06-07T19:30:00+08:00"
+  - id: "f016"
+    category: "音频归一化"
+    description: "cmd_audio 使用 -shortest，ffmpeg 在原始音频 EOF 时立即停止，apad 来不及 pad 到目标时长"
+    resolution: "移除 -shortest，用 -t 作为输出选项单独限制时长"
+    rule_id: "apad_shortest_conflict"
+    timestamp: "2026-06-07T18:00:00+08:00"
+  - id: "f017"
+    category: "时轴精度"
+    description: "_normalize_video 阈值 abs(raw-target)<0.1 太宽，视频长度不精确导致 filter_complex offset 累积错位"
+    resolution: "阈值收紧至 0.001s，确保所有 segment 视频/音频长度精确匹配 target_duration"
+    rule_id: "duration_threshold"
+    timestamp: "2026-06-07T18:30:00+08:00"
+  - id: "f018"
+    category: "音频混音"
+    description: "TTS 混入使用 -map 1:a 完全替换原始音频，30/49 segment 的 AI 素材背景音乐丢失"
+    resolution: "检测源素材音频流，有则 amix 混合（背景 volume=0.2 + TTS volume=1.0 + 总音量 0.8），无则直接替换"
+    rule_id: "bg_audio_mix_logic"
+    timestamp: "2026-06-07T20:00:00+08:00"
 autopoiesis: true
 memory_type: "living"
-last_updated: "2026-06-07"
-evolution_count: 0
+last_updated: "2026-06-08"
+evolution_count: 5
 ---
 
 # LESSONS_LEARNED — md2video 活记忆器官
@@ -188,3 +218,35 @@ evolution_count: 0
 ---
 
 *本文件由 harness/self_report.py 自动维护。手动修改请在 frontmatter 后添加自定义章节。*
+
+## 摩擦点类别：音频混音（v11-v16 深度复盘）
+
+### f014 — acrossfade 无 offset 参数
+- **描述**：ffmpeg `acrossfade` 滤镜没有 `offset` 参数，链式混合时所有音频从 0 时刻开始叠加，与视频 `xfade` 的精确 offset 完全不同步。质检 48/49 失败，corr≈0
+- **解决**：放弃 `acrossfade`，改用 `adelay`+`amix`，但 `amix=inputs=49` 导致 OOM。最终方案：Python+numpy 逐段提取音频样本，按 `start_time` 精确叠加到总音轨
+- **关联规则**：`acrossfade_no_offset`
+- **时间**：2026-06-07T19:00:00+08:00
+
+### f015 — amix OOM
+- **描述**：`amix=inputs=49:duration=longest` 需要 ffmpeg 同时解码 49 个音频流，内存峰值超 3.9GB，被系统 SIGKILL (exit code 9)
+- **解决**：音频混合完全从 filter_complex 剥离，用 Python numpy 实现。每段单独 `ffmpeg -f s16le -` 提取 PCM，按 `start_time` 对齐后 `mixed[start:end] += samples`。49 段总数据量仅 ~70MB，内存安全
+- **关联规则**：`amix_memory_limit`
+- **时间**：2026-06-07T19:30:00+08:00
+
+### f016 — apad 与 -shortest 冲突
+- **描述**：`_normalize_video` 的 `cmd_audio` 同时用了 `apad=pad_dur={target}` 和 `-shortest`。`apad` 在音频 EOF 后开始 pad 静音，但 `-shortest` 让 ffmpeg 检测到"有效流结束"立即停止，`apad` 来不及完成
+- **解决**：`cmd_audio` 移除 `-shortest`，让 `-t` 作为**输出选项**单独限制时长。`apad` pad 完成后，`-t` 在 target_duration 处截断
+- **关联规则**：`apad_shortest_conflict`
+- **时间**：2026-06-07T18:00:00+08:00
+
+### f017 — 时长阈值过宽
+- **描述**：`_normalize_video` 中 `abs(raw_duration - target_duration) < 0.1` 判定为"足够接近"，跳过 `trim`/`tpad`。s02 原始 15.10s vs target 15.12s，差 0.02s 被跳过，导致 filter_complex offset 累积错位
+- **解决**：阈值收紧至 `0.001s`（1ms）。任何不等于 target_duration 的素材都强制 `trim` 或 `tpad` 到精确时长
+- **关联规则**：`duration_threshold`
+- **时间**：2026-06-07T18:30:00+08:00
+
+### f018 — 背景音乐丢失
+- **描述**：TTS 混入命令 `-map 0:v -map 1:a` 完全丢弃了原始音频。30/49 segment 的 AI 素材有背景音乐，全部被静默替换为纯 TTS
+- **解决**：混入前检测源素材是否有音频流。有则 `amix` 混合（背景 `volume=0.2` + TTS `volume=1.0`，总输出 `volume=0.8` 防 clipping）；无则直接替换。质检 corr 从 1.0 降至 ~0.85，仍远高于 0.3 阈值
+- **关联规则**：`bg_audio_mix_logic`
+- **时间**：2026-06-07T20:00:00+08:00

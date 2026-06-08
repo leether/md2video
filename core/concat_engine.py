@@ -106,6 +106,61 @@ class ConcatEngine:
         result = subprocess.run(cmd, capture_output=True, text=True)
         return "audio" in result.stdout.lower()
 
+    def _deduplicate_cta(self):
+        """CTA 去重：只保留最后一个作为 endcard，其他降级为 narrative"""
+        cta_indices = []
+        for i, entry in enumerate(self.timeline):
+            seg_id = entry.get("segment_id", "")
+            seg_type = entry.get("segment_type", "")
+            if "cta" in seg_id.lower() or seg_type == "cta":
+                cta_indices.append(i)
+
+        if len(cta_indices) > 1:
+            print(f"[ConcatEngine] 检测到 {len(cta_indices)} 个 CTA，去重中...")
+            for i in cta_indices[:-1]:
+                old_type = self.timeline[i].get("segment_type", "?")
+                self.timeline[i]["segment_type"] = "narrative"
+                print(f"[ConcatEngine]   {self.timeline[i]['segment_id']}: {old_type} → narrative")
+
+        # 确保最后一个是 CTA
+        if not self.timeline:
+            return
+
+        last = self.timeline[-1]
+        last_is_cta = "cta" in last.get("segment_id", "").lower() or last.get("segment_type") == "cta"
+
+        if not last_is_cta and cta_indices:
+            last_cta_idx = cta_indices[-1]
+            cta_entry = self.timeline.pop(last_cta_idx)
+            self.timeline.append(cta_entry)
+            print(f"[ConcatEngine] 将 {cta_entry['segment_id']} 移到末尾作为 endcard")
+
+    def _generate_cta_endcard(self, qr_path="assets/qr.png", duration=5.0):
+        """生成 CTA endcard 视频（黑底+二维码居中+静音音轨）"""
+        qr = Path(qr_path)
+        if not qr.exists():
+            print(f"[WARN] QR 图片不存在: {qr_path}")
+            return None
+
+        endcard_video = self.temp_dir / "cta_endcard.mp4"
+        cmd = [
+            "ffmpeg", "-y",
+            "-loop", "1",
+            "-i", str(qr),
+            "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+            "-vf",
+            f"scale=400:400,pad={self.config.target_width}:{self.config.target_height}:(ow-iw)/2:(oh-ih)/2:black",
+            "-shortest",
+            "-t", str(duration),
+            "-c:v", self.config.video_codec,
+            "-c:a", self.config.audio_codec,
+            "-b:a", self.config.audio_bitrate,
+            "-pix_fmt", self.config.pixel_format,
+            str(endcard_video),
+        ]
+        subprocess.run(cmd, capture_output=True, check=True)
+        return str(endcard_video)
+
     def _normalize_video(
         self,
         input_path: str,
@@ -116,21 +171,19 @@ class ConcatEngine:
         """
         将单个视频归一化到目标时长和分辨率
 
-        策略：
-        1. scale + pad 到 1080×1920（保持比例，不足处黑边填充）
-        2. 如果视频时长 > 目标时长：trim 到目标时长
-        3. 如果视频时长 < 目标时长：freeze 最后一帧 pad 到目标时长
-        4. 如果是图片：loop 成目标时长的视频
-        5. 确保有音频流（如果没有，添加静音音轨）
-        6. 统一帧率、编码格式
+        策略（v1.2 三步分离）：
+        1. 生成无音频视频（scale/pad/trim/tpad/fps）
+        2. 单独生成音频（原始音频提取+apad pad 到目标时长，或无音频时生成静音）
+        3. 合并视频+音频
 
-        Returns:
-            实际输出时长（应与 target_duration 一致）
+        三步分离彻底绕过 -vf 与 -af 同时存在时的 ffmpeg 行为不一致问题。
         """
         path = Path(input_path)
         is_image = path.suffix.lower() in (".jpg", ".jpeg", ".png", ".gif", ".webp")
 
-        # 构建视频滤镜链
+        # ═══════════════════════════════════════
+        # Step 1: 生成无音频视频
+        # ═══════════════════════════════════════
         filters = []
         scale_pad = (
             f"scale={self.config.target_width}:{self.config.target_height}:force_original_aspect_ratio=decrease,"
@@ -139,15 +192,10 @@ class ConcatEngine:
         filters.append(scale_pad)
         filters.append(f"fps={self.config.target_fps}")
 
-        # 确定是否需要确保音频
-        has_audio = self._has_audio_stream(input_path) if not is_image else False
-        need_audio = ensure_audio and not has_audio
-
         if is_image:
-            # 图片：loop 成目标时长的视频
             filter_str = ",".join(filters)
-            cmd = [
-                "ffmpeg", "-y",
+            cmd_video = [
+                "ffmpeg", "-y", "-v", "error",
                 "-loop", "1",
                 "-i", input_path,
                 "-t", str(target_duration),
@@ -155,59 +203,99 @@ class ConcatEngine:
                 "-c:v", self.config.video_codec,
                 "-pix_fmt", self.config.pixel_format,
                 "-crf", str(self.config.crf),
-                "-an",  # 图片无音频
+                "-an",
                 output_path,
             ]
         else:
-            # 视频：先获取时长
             info = self._probe_video_info(input_path)
             raw_duration = float(info.get("format", {}).get("duration", 0) or 0)
             if raw_duration == 0:
                 raw_duration = self._probe_duration(input_path)
 
-            # 时长调整策略
-            if abs(raw_duration - target_duration) < 0.1:
-                # 几乎相等，只做缩放
+            # 必须精确匹配 target_duration，否则 filter_complex 的 acrossfade 会累积错位
+            if abs(raw_duration - target_duration) < 0.001:
                 filter_str = ",".join(filters)
             elif raw_duration > target_duration:
-                # 太长：trim
                 filter_str = ",".join(filters + [f"trim=duration={target_duration}"])
             else:
-                # 太短：freeze 最后一帧 pad
                 freeze_duration = target_duration - raw_duration
                 filter_str = ",".join(filters + [f"tpad=stop_mode=clone:stop_duration={freeze_duration}"])
 
-            cmd = [
-                "ffmpeg", "-y",
+            cmd_video = [
+                "ffmpeg", "-y", "-v", "error",
                 "-i", input_path,
                 "-vf", filter_str,
                 "-t", str(target_duration),
                 "-c:v", self.config.video_codec,
-                "-c:a", "copy",  # 保留原始音频流（filter_complex 路径需要）
                 "-pix_fmt", self.config.pixel_format,
                 "-crf", str(self.config.crf),
+                "-an",
                 output_path,
             ]
 
-        subprocess.run(cmd, capture_output=True, check=True)
+        subprocess.run(cmd_video, capture_output=True, check=True)
 
-        # 如果没有音频，添加静音音轨
-        if need_audio or is_image:
-            temp_with_audio = str(self.temp_dir / f"{path.stem}_with_audio.mp4")
+        # ═══════════════════════════════════════
+        # Step 2: 单独生成音频（精确到 target_duration）
+        # ═══════════════════════════════════════
+        has_audio = self._has_audio_stream(input_path) if not is_image else False
+        temp_audio = str(self.temp_dir / f"{path.stem}_audio.m4a")
+
+        if has_audio:
+            # 提取原始音频，用 apad pad 到目标时长
+            # 注意：不能加 -shortest，否则 ffmpeg 在原始音频 EOF 时立即停止，apad 来不及 pad
             cmd_audio = [
-                "ffmpeg", "-y",
-                "-f", "lavfi",
-                "-i", f"anullsrc=r=48000:cl=stereo",
-                "-i", output_path,
-                "-shortest",
-                "-c:v", "copy",
+                "ffmpeg", "-y", "-v", "error",
+                "-i", input_path,
+                "-vn",
+                "-af", f"apad=pad_dur={target_duration}",
+                "-t", str(target_duration),
                 "-c:a", self.config.audio_codec,
                 "-b:a", self.config.audio_bitrate,
-                temp_with_audio,
+                temp_audio,
             ]
-            subprocess.run(cmd_audio, capture_output=True, check=True)
-            # 替换原文件
-            os.replace(temp_with_audio, output_path)
+        else:
+            # 生成静音音频
+            cmd_audio = [
+                "ffmpeg", "-y", "-v", "error",
+                "-f", "lavfi", "-i", f"anullsrc=r=48000:cl=stereo",
+                "-t", str(target_duration),
+                "-c:a", self.config.audio_codec,
+                "-b:a", self.config.audio_bitrate,
+                temp_audio,
+            ]
+
+        subprocess.run(cmd_audio, capture_output=True, check=True)
+
+        # ═══════════════════════════════════════
+        # Step 3: 合并视频和音频
+        # ═══════════════════════════════════════
+        temp_merged = str(self.temp_dir / f"{path.stem}_merged.mp4")
+        cmd_merge = [
+            "ffmpeg", "-y", "-v", "error",
+            "-i", output_path,
+            "-i", temp_audio,
+            "-c:v", "copy",
+            "-c:a", "copy",
+            "-shortest",
+            temp_merged,
+        ]
+        subprocess.run(cmd_merge, capture_output=True, check=True)
+        os.replace(temp_merged, output_path)
+
+        # 清理临时音频文件
+        Path(temp_audio).unlink(missing_ok=True)
+
+        # 验证：音视频时长必须一致
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "stream=duration", "-of", "default=noprint_wrappers=1", output_path],
+            capture_output=True, text=True
+        )
+        durations = [float(x.split("=")[1]) for x in probe.stdout.strip().split("\n") if x.startswith("duration=")]
+        if len(durations) >= 2:
+            vdur, adur = durations[0], durations[1]
+            if abs(adur - target_duration) > 0.5 or abs(vdur - target_duration) > 0.5:
+                print(f"[WARN] {path.stem}: 视频={vdur:.2f}s 音频={adur:.2f}s 目标={target_duration:.2f}s")
 
         return self._probe_duration(output_path)
 
@@ -313,12 +401,12 @@ class ConcatEngine:
     def _build_filter_complex(
         self,
         clips: List[dict],
-    ) -> Tuple[List[str], str, str]:
+    ) -> Tuple[str, str]:
         """
-        构建 filter_complex 滤镜链
+        构建视频 filter_complex 滤镜链（音频用 Python 单独处理，避免 amix OOM）
 
         Returns:
-            (ffmpeg_args, final_video_label, final_audio_label)
+            (filter_complex_string, final_video_label)
         """
         filter_parts = []
 
@@ -328,13 +416,11 @@ class ConcatEngine:
             fade_in = clip.get("fade_in", 0.0)
             fade_out = clip.get("fade_out", 0.0)
 
-            # 如果前一段有 transition，当前段的 fade_in 被覆盖
             if i > 0:
                 prev_trans = clips[i - 1].get("transition")
                 if prev_trans:
                     fade_in = 0.0
 
-            # 如果当前段有 transition，当前段的 fade_out 被覆盖
             trans = clip.get("transition")
             if trans:
                 fade_out = 0.0
@@ -345,7 +431,6 @@ class ConcatEngine:
         for i, (clip, (fade_in, fade_out)) in enumerate(zip(clips, effective_fades)):
             duration = clip["duration"]
 
-            # 视频 fade
             video_filters = ["setpts=PTS-STARTPTS"]
             if fade_in > 0:
                 video_filters.append(f"fade=t=in:st=0:d={fade_in}")
@@ -353,37 +438,20 @@ class ConcatEngine:
                 video_filters.append(f"fade=t=out:st={duration - fade_out}:d={fade_out}")
             filter_parts.append(f"[{i}:v]{','.join(video_filters)}[v{i}]")
 
-            # 音频 fade
-            audio_filters = ["asetpts=PTS-STARTPTS"]
-            if fade_in > 0:
-                audio_filters.append(f"afade=t=in:st=0:d={fade_in}")
-            if fade_out > 0:
-                audio_filters.append(f"afade=t=out:st={duration - fade_out}:d={fade_out}")
-            filter_parts.append(f"[{i}:a]{','.join(audio_filters)}[a{i}]")
-
-        # 链式应用 transition
+        # 链式应用 transition（视频）
         video_chain = "v0"
-        audio_chain = "a0"
 
         for i in range(1, len(clips)):
             trans = clips[i - 1].get("transition")
             if not trans:
-                # 没有 transition，简单拼接（用 concat filter）
-                # 但这里我们已经在做 filter_complex 了，所以用 concat filter
                 filter_parts.append(
                     f"[{video_chain}][v{i}]concat=n=2:v=1:a=0[vt{i}]"
                 )
-                filter_parts.append(
-                    f"[{audio_chain}][a{i}]concat=n=2:v=0:a=1[at{i}]"
-                )
                 video_chain = f"vt{i}"
-                audio_chain = f"at{i}"
             else:
                 trans_type = trans.get("type", self.config.default_transition_type)
                 trans_duration = trans.get("duration", self.config.default_transition_duration)
 
-                # 计算 offset
-                # offset = sum(clips[0:i].duration) - sum(all_transition_durations[0:i])
                 cum_duration = sum(c["duration"] for c in clips[:i])
                 cum_trans_duration = sum(
                     clips[j].get("transition", {}).get("duration", 0.0)
@@ -391,7 +459,6 @@ class ConcatEngine:
                 )
                 offset = cum_duration - cum_trans_duration
 
-                # xfade 视频转场
                 xfade_types = {
                     "fade": "fade",
                     "crossfade": "fade",
@@ -408,18 +475,10 @@ class ConcatEngine:
                     f"[{video_chain}][v{i}]xfade=transition={xfade_type}:"
                     f"duration={trans_duration}:offset={offset}[vt{i}]"
                 )
-
-                # acrossfade 音频交叉淡入淡出
-                filter_parts.append(
-                    f"[{audio_chain}][a{i}]acrossfade=d={trans_duration}:"
-                    f"c1=tri:c2=tri[at{i}]"
-                )
-
                 video_chain = f"vt{i}"
-                audio_chain = f"at{i}"
 
         filter_complex = ";".join(filter_parts)
-        return filter_complex, video_chain, audio_chain
+        return filter_complex, video_chain
 
     def _concat_effect_path(
         self,
@@ -427,10 +486,9 @@ class ConcatEngine:
         clips: List[dict],
         output_video: str,
     ) -> Path:
-        """特效路径：filter_complex"""
-        filter_complex, v_out, a_out = self._build_filter_complex(clips)
+        """特效路径：filter_complex（仅视频，音频由 Python 单独处理）"""
+        filter_complex, v_out = self._build_filter_complex(clips)
 
-        # 构建输入参数
         inputs = []
         for path in normalized_videos:
             inputs.extend(["-i", path])
@@ -440,12 +498,10 @@ class ConcatEngine:
             *inputs,
             "-filter_complex", filter_complex,
             "-map", f"[{v_out}]",
-            "-map", f"[{a_out}]",
+            "-an",  # 无音频，音频由 Python 单独混合
             "-c:v", self.config.video_codec,
             "-preset", "fast",
             "-crf", str(self.config.crf),
-            "-c:a", self.config.audio_codec,
-            "-b:a", self.config.audio_bitrate,
             "-movflags", "+faststart",
             "-pix_fmt", self.config.pixel_format,
             output_video,
@@ -459,6 +515,62 @@ class ConcatEngine:
                 result.returncode, cmd, output=result.stdout, stderr=result.stderr
             )
         return Path(output_video)
+
+    def _mix_audio_python(
+        self,
+        normalized_videos: List[str],
+        clips: List[dict],
+    ) -> Path:
+        """
+        用 Python + numpy 混合音频，避免 ffmpeg amix 内存不足。
+        每个音频流按 start_time 精确对齐，transition 期间自然叠加。
+        """
+        import numpy as np
+        import wave
+
+        sr = 48000
+        last_clip = clips[-1]
+        total_duration = last_clip["end_time"]
+        total_samples = int(total_duration * sr) + sr  # 多留 1 秒缓冲
+
+        mixed = np.zeros(total_samples, dtype=np.float64)
+
+        for i, video_path in enumerate(normalized_videos):
+            clip = clips[i]
+            start_time = clip["start_time"]
+
+            # 提取音频样本
+            cmd = [
+                "ffmpeg", "-y", "-v", "error",
+                "-i", video_path,
+                "-vn", "-ar", str(sr), "-ac", "1",
+                "-c:a", "pcm_s16le", "-f", "s16le", "-",
+            ]
+            result = subprocess.run(cmd, capture_output=True, check=True)
+            samples = np.frombuffer(result.stdout, dtype=np.int16).astype(np.float64)
+
+            start_sample = int(start_time * sr)
+            end_sample = min(start_sample + len(samples), total_samples)
+
+            if start_sample < total_samples:
+                seg_len = end_sample - start_sample
+                mixed[start_sample:end_sample] += samples[:seg_len]
+
+        # 归一化防止 clipping
+        max_amp = np.max(np.abs(mixed))
+        if max_amp > 32767:
+            mixed = mixed * (32767.0 / max_amp)
+
+        # 保存为 wav
+        temp_audio = self.temp_dir / "mixed_audio.wav"
+        mixed_int16 = mixed.astype(np.int16)
+        with wave.open(str(temp_audio), "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sr)
+            wf.writeframes(mixed_int16.tobytes())
+
+        return temp_audio
 
     # ═══════════════════════════════════════════════════════
     # 主入口
@@ -485,6 +597,20 @@ class ConcatEngine:
 
         if not self.timeline:
             raise ValueError("Timeline is empty")
+
+        # CTA 去重与结尾修正
+        self._deduplicate_cta()
+
+        # 重新计算 start_time / end_time（与 filter_complex offset 逻辑一致）
+        cum_time = 0.0
+        for entry in self.timeline:
+            entry["start_time"] = cum_time
+            trans = entry.get("transition")
+            if trans:
+                cum_time += entry["duration"] - trans.get("duration", 0.0)
+            else:
+                cum_time += entry["duration"]
+            entry["end_time"] = cum_time
 
         # 判断是否需要走特效路径
         has_effects = any(
@@ -514,23 +640,93 @@ class ConcatEngine:
             if abs(actual_duration - target_duration) > 0.5:
                 print(f"[WARN] {seg_id}: 归一化后时长 {actual_duration:.2f}s 与目标 {target_duration:.2f}s 偏差过大")
 
-            # 2. 转换音频为 wav（快速路径需要）
+            # 2. 处理音频：TTS 旁白混入归一化视频
             mp3_path = Path(segments_audio_dir) / f"{seg_id}.mp3"
             if mp3_path.exists():
                 wav_path = self.temp_dir / f"{seg_id}.wav"
                 self._convert_audio_to_wav(str(mp3_path), str(wav_path))
                 audio_wavs.append(str(wav_path))
+
+                # 将 TTS 旁白混入归一化视频
+                # 如果源素材有原始音频（如背景音乐），混合保留；否则直接替换
+                temp_with_tts = str(self.temp_dir / f"{seg_id}_tts.mp4")
+                has_original_audio = self._has_audio_stream(media_path)
+                if has_original_audio:
+                    # 混合模式：原始音频降音量 + TTS，避免 clipping
+                    cmd_tts = [
+                        "ffmpeg", "-y", "-v", "error",
+                        "-i", str(norm_path),
+                        "-i", str(wav_path),
+                        "-filter_complex",
+                        "[0:a]volume=0.2[orig];[1:a]volume=1.0[tts];"
+                        "[orig][tts]amix=inputs=2:normalize=0[aout];"
+                        "[aout]volume=0.8[final]",
+                        "-map", "0:v",
+                        "-map", "[final]",
+                        "-c:v", "copy",
+                        "-c:a", self.config.audio_codec,
+                        "-b:a", self.config.audio_bitrate,
+                        "-shortest",
+                        temp_with_tts,
+                    ]
+                else:
+                    # 替换模式：源素材无音频，直接用 TTS
+                    cmd_tts = [
+                        "ffmpeg", "-y", "-v", "error",
+                        "-i", str(norm_path),
+                        "-i", str(wav_path),
+                        "-map", "0:v",
+                        "-map", "1:a",
+                        "-c:v", "copy",
+                        "-c:a", self.config.audio_codec,
+                        "-b:a", self.config.audio_bitrate,
+                        "-shortest",
+                        temp_with_tts,
+                    ]
+                subprocess.run(cmd_tts, capture_output=True, check=True)
+                os.replace(temp_with_tts, norm_path)
             else:
                 print(f"[WARN] {seg_id}: 找不到音频 {mp3_path}")
 
         # 选择拼接路径
         if has_effects:
-            # 特效路径：视频用 filter_complex，音频也包含在 filter_complex 中
-            # 注意：特效路径下，normalized_videos 已经包含音频了，不需要单独处理音频
-            output = self._concat_effect_path(normalized_videos, self.timeline, output_video)
+            # 特效路径：视频用 filter_complex（无音频），音频用 Python numpy 混合，避免 ffmpeg amix OOM
+            temp_video = str(self.temp_dir / "video_only.mp4")
+            self._concat_effect_path(normalized_videos, self.timeline, temp_video)
+
+            print("[ConcatEngine] 混合音频...")
+            temp_audio = self._mix_audio_python(normalized_videos, self.timeline)
+
+            print("[ConcatEngine] 合并视频与音频...")
+            cmd_merge = [
+                "ffmpeg", "-y", "-v", "error",
+                "-i", temp_video,
+                "-i", str(temp_audio),
+                "-c:v", "copy",
+                "-c:a", self.config.audio_codec,
+                "-b:a", self.config.audio_bitrate,
+                "-shortest",
+                output_video,
+            ]
+            subprocess.run(cmd_merge, capture_output=True, check=True)
+            output = Path(output_video)
         else:
             # 快速路径
             output = self._concat_fast_path(normalized_videos, audio_wavs, output_video)
+
+        # 如果最后不是 CTA，追加 CTA endcard
+        last_entry = self.timeline[-1] if self.timeline else None
+        last_is_cta = last_entry and (
+            "cta" in last_entry.get("segment_id", "").lower()
+            or last_entry.get("segment_type") == "cta"
+        )
+        if not last_is_cta:
+            endcard_path = self._generate_cta_endcard()
+            if endcard_path:
+                print(f"[ConcatEngine] 追加 CTA endcard...")
+                temp_output = str(Path(output_video).with_suffix(".tmp.mp4"))
+                self.append_endcard(output_video, endcard_path, temp_output, endcard_duration=5.0)
+                os.replace(temp_output, output_video)
 
         # 验证输出
         output_duration = self._probe_duration(output_video)
