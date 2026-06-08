@@ -22,6 +22,8 @@ MODULES = [
     "harness.harness",
     "harness.memory_loader",
     "harness.self_report",
+    "scripts.preflight",
+    "scripts.orchestrator",
 ]
 
 

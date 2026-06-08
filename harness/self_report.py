@@ -151,7 +151,7 @@ class SelfReport:
         safe_cat = category.lower().replace(" ", "_").replace("/", "_").replace("-", "_")
         return mapping.get(category, f"auto_{safe_cat}")
 
-    def auto_encode(self):
+    def auto_encode(self, write: bool = True):
         """
         自动将未编码的摩擦点加入 video-rules.json
 
@@ -203,7 +203,8 @@ class SelfReport:
                 "last_evolution": datetime.now().isoformat(),
                 "evolution_count": self.rules.get("autopoiesis", {}).get("evolution_count", 0) + new_rules_count,
             }
-            self._save_json(self.rules_path, self.rules)
+            if write:
+                self._save_json(self.rules_path, self.rules)
 
         return new_rules_count
 
@@ -405,21 +406,23 @@ class SelfReport:
 
         print("\n" + "=" * 60)
 
-    def run(self) -> Tuple[Path, Dict]:
+    def run(self, no_write: bool = False, print_human: bool = True) -> Tuple[Optional[Path], Dict]:
         """
         完整自检流程：
         1. 加载系统状态
         2. 自动编码摩擦点
-        3. 写入活记忆
-        4. 生成并保存报告
-        5. 打印报告
+        3. 写入活记忆（no_write=False 时）
+        4. 生成并保存报告（no_write=False 时）
+        5. 打印报告（print_human=True 时）
         """
         self.load_system_state()
-        self.auto_encode()
-        self.write_lessons()
+        self.auto_encode(write=not no_write)
+        if not no_write:
+            self.write_lessons()
         self.generate_report()
-        report_path = self.save_report()
-        self.print_report()
+        report_path = None if no_write else self.save_report()
+        if print_human:
+            self.print_report()
         return report_path, self.report
 
 
@@ -431,6 +434,9 @@ def main():
     parser.add_argument("--project-dir", default=".", help="项目根目录")
     parser.add_argument("--capture", nargs=3, metavar=("CATEGORY", "DESC", "RESOLUTION"),
                         help="捕获一个摩擦点：--capture '素材遗漏' 's22缺失' '补充生成'")
+    parser.add_argument("--no-write", action="store_true",
+                        help="只生成内存报告，不写 LESSONS_LEARNED.md、video-rules.json 或 output/self_report.json")
+    parser.add_argument("--json", action="store_true", help="输出 machine-readable JSON")
     args = parser.parse_args()
 
     report = SelfReport(project_dir=args.project_dir)
@@ -438,7 +444,9 @@ def main():
     if args.capture:
         report.capture_friction(args.capture[0], args.capture[1], args.capture[2])
 
-    report.run()
+    _, data = report.run(no_write=args.no_write, print_human=not args.json)
+    if args.json:
+        print(json.dumps(data, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

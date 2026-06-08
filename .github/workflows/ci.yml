@@ -26,6 +26,10 @@ jobs:
         run: |
           python -m py_compile $(git ls-files '*.py')
 
+      - name: Unit tests
+        run: |
+          python -m unittest discover -s tests -p 'test_*.py'
+
       - name: Import and routing smoke check
         run: |
           python scripts/smoke_imports.py
@@ -34,15 +38,27 @@ jobs:
         run: |
           python scripts/verify_cta_resources.py
 
+      - name: Pipeline preflight dry-run
+        run: |
+          python scripts/preflight.py --input examples/example_article.md --skip-command-checks --json
+
+      - name: Orchestrator governance dry-run
+        run: |
+          python scripts/orchestrator.py --input examples/example_article.md --output-dir output/ci-dry-run --log /tmp/md2video-ci-pipeline.jsonl --dry-run --skip-command-checks --allow-dirty-output
+
       - name: JSON validation
         run: |
           python -c "import json; json.load(open('harness/video-rules.json'))"
           python -c "import json; json.load(open('rules/segment_types.json'))"
           python -c "import json; json.load(open('rules/storyboard_rules.json'))"
 
-      - name: Self report dry-run
+      - name: Self report no-write dry-run
         run: |
-          python harness/self_report.py
+          python harness/self_report.py --no-write --json
+
+      - name: Privacy gate
+        run: |
+          bash scripts/privacy-check.sh --full
 
       - name: Check LESSONS_LEARNED frontmatter
         run: |
