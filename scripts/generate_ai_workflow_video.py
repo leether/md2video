@@ -31,7 +31,10 @@ from core.timeline_mapper import TimelineMapper
 from extensions.storyboard.storyboard_ai import StoryboardAI
 from harness.harness import VideoComplianceHarness
 
-DREAMINA_CLI = Path("/Users/lize/workspace/agent-tools/dreamina/bin/jimeng")
+AGENT_TOOLS_DIR = Path(os.environ.get("AGENT_TOOLS_DIR", str(Path.home() / "workspace/agent-tools")))
+DREAMINA_CLI = Path(
+    os.environ.get("DREAMINA_CLI", str(AGENT_TOOLS_DIR / "dreamina/bin/jimeng"))
+)
 MODEL_ALIASES = {
     "seedance2.0_vipfast": "seedance2.0fast_vip",
     "seedance2.0-fast-vip": "seedance2.0fast_vip",
@@ -111,7 +114,7 @@ def normalize_model_name(model: str) -> str:
 
 def discover_env_files() -> dict[str, Any]:
     repo_envs = sorted(str(p.relative_to(REPO_ROOT)) for p in REPO_ROOT.glob(".env*") if p.is_file())
-    agent_tools = Path("/Users/lize/workspace/agent-tools")
+    agent_tools = AGENT_TOOLS_DIR
     tool_envs = []
     if agent_tools.exists():
         tool_envs = sorted(str(p) for p in agent_tools.glob("**/.env*") if p.is_file())
